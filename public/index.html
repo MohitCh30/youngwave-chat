@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Young Wave</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body class="theme-dark"> 
+  
+  <!-- LOGIN SCREEN -->
+  <div id="login-screen" class="login-screen">
+    <h1 class="login-title">Young Wave</h1>
+    <p class="login-subtitle">A shared space for chaos, emotion, and late-night brainwaves.</p>
+
+    <div class="login-actions">
+      <button id="googleLoginBtn" class="btn primary">Continue with Google</button>
+      <button id="anonLoginBtn" class="btn ghost">Continue as Guest</button>
+    </div>
+  </div>
+
+  <!-- APP SCREEN -->
+  <div id="app-screen" class="app" style="display: none;">
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar" class="sidebar expanded">
+      <div class="sidebar-top">
+        <button id="collapseBtn" class="collapse-btn" title="Collapse sidebar">⟨</button>
+        <h1 class="brand">Menu</h1>
+      </div>
+
+      <div class="profile">
+        <img id="userPhoto" class="user-photo" src="assets/default.png" alt="avatar">
+        <div class="profile-info">
+          <div id="userName" class="user-name">Guest</div>
+          <div id="userStatus" class="user-status">Offline</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <section id="dms-section" class="nav-section dms">
+          <h4>Direct Messages</h4>
+          <ul id="dm-list" class="dm-list"></ul>
+        </section>
+
+        <section class="nav-section rooms">
+          <h4>Rooms</h4>
+          <ul id="room-list" class="room-list"></ul>
+        </section>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <button id="logoutBtn" class="logout-btn">Logout</button>
+      </div>
+    </aside>
+
+    <!-- MAIN AREA -->
+    <div class="main-area">
+
+      <!-- TOP BAR -->
+      <header class="topbar">
+        <div class="left">
+          <button id="sidebarToggle" class="icon-btn" title="Toggle sidebar">☰</button>
+          <div class="app-title">Young Wave</div>
+        </div>
+        <div class="right">
+          <button id="createRoomBtnHeader" class="create-room-btn">+ Create Room</button>
+          <button id="settingsBtn" class="icon-btn" title="Room settings">⚙</button>
+        </div>
+      </header>
+
+      <!-- CHAT AREA -->
+      <main class="chat-area">
+
+        <div class="room-header">
+          <div id="chat-header">Select a room</div>
+          <div id="room-rules" class="rules hidden"></div>
+        </div>
+
+        <div id="messages" class="messages"></div>
+
+        <div class="typing-area">
+          <div id="typingIndicator"></div>
+        </div>
+
+        <div class="input-area">
+          <button id="attachBtn" class="icon-btn" title="Attach image">📎</button>
+
+          <!-- IMAGE INPUT -->
+          <input id="imageUpload" type="file" accept="image/*" class="file-input">
+
+          <div id="attachmentPreview" class="attachment-preview hidden"></div>
+
+          <!-- MESSAGE INPUT -->
+          <input id="messageInput" class="message-input" placeholder="Type a message...">
+
+          <!-- SEND BUTTON -->
+          <button id="sendBtn" class="send-btn">Send</button>
+        </div>
+
+      </main>
+
+    </div>
+
+    <!-- CREATE ROOM MODAL -->
+    <div id="modal" class="modal hidden">
+      <div class="modal-panel">
+        <h3>Create a Room</h3>
+        <input id="roomNameInput" placeholder="Room name" />
+        <textarea id="roomRulesInput" placeholder="Room rules (optional)"></textarea>
+        <div class="modal-actions">
+          <button id="modalCreateBtn" class="btn primary">Create</button>
+          <button id="modalCancelBtn" class="btn ghost">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADMIN PANEL -->
+    <div id="admin-panel" class="admin-panel">
+      <div class="admin-panel-inner">
+
+        <div class="admin-panel-header">
+          <h3 id="adminRoomTitle">Room Settings</h3>
+          <button id="adminCloseBtn" class="icon-btn">✖</button>
+        </div>
+
+        <div class="admin-panel-body">
+          <div id="admin-info" class="admin-info"></div>
+
+          <div class="admin-subtitle">Join Requests</div>
+          <ul id="request-list" class="request-list"></ul>
+
+          <div class="admin-subtitle">Members</div>
+          <ul id="member-list" class="member-list"></ul>
+
+          <button id="deleteRoomBtn" class="danger-btn">Delete Room</button>
+        </div>
+
+      </div>
+    </div>
+ 
+  
+
+  </div>
+
+ 
+
+  <script type="module" src="main.js"></script>
+
+
+  <div id="disclaimerModal" class="disclaimer-overlay hidden">
+    <div class="disclaimer-box">
+  
+      <h2>YoungWave — User Agreement</h2>
+  
+      <div class="modal-content">
+        <p>
+          Welcome to <strong>YoungWave</strong>, a Gen-Z community space.  
+          To continue, please review and agree to the terms below:
+        </p>
+  
+        <h4>Community Conduct</h4>
+        <ul>
+          <li>Communicate respectfully and responsibly.</li>
+          <li>Avoid harassment, hostility, or abusive behavior.</li>
+          <li>Respect privacy — yours and others’.</li>
+          <li>No harmful, illegal, or explicit content.</li>
+        </ul>
+  
+        <h4>Platform & Legal Terms</h4>
+        <ul>
+          <li>User-generated content; platform not liable for outcomes.</li>
+          <li>Serious misuse may lead to account termination.</li>
+          <li>You agree to Copyright Act 1957, IT Act 2000, IT Rules 2021, Trademark Act 1999.</li>
+        </ul>
+      </div>
+  
+      <div class="disclaimer-actions">
+        <button id="agreeBtn" class="btn primary">I Agree</button>
+        <button id="disagreeBtn" class="btn danger">I Disagree</button>
+      </div>
+  
+    </div>
+  </div>
+  
+</body>
+</html>

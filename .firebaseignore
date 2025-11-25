@@ -1,0 +1,10 @@
+firebase.json
+.firebaserc
+*.log
+node_modules/
+.git/
+.gitignore
+storage.rules
+firestore.rules
+firestore.indexes.json
+README.md

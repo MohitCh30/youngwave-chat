@@ -93,17 +93,6 @@ Firebase Hosting
 
 The entire project is deployed on Firebase Hosting with a fast global CDN. No backend server is required. All real time logic is handled through Firebase.
 
-## Project Structure
-
-public/
-  index.html
-  main.js
-  style.css
-  assets/
-firebase.json
-firestore.rules
-storage.rules
-
 ## Screenshots
 
 <img width="1920" height="864" alt="Screenshot (843)" src="https://github.com/user-attachments/assets/d6abe339-16bc-4f40-8bc9-7ee82408807d" />

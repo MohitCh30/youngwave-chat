@@ -1,192 +1,143 @@
-# YoungWave Chat App
+# YoungWave
 
-### A real time, Firebase powered chat platform built using HTML, CSS and Vanilla JavaScript. Designed as a clean, modern and fast community chatroom system for Gen Z users. The app supports text messages, image uploads, reactions, room based permissions, anonymous users, and a full room admin panel.
+A full-stack real-time chat application built for modern, mobile-first communication. YoungWave supports public rooms, private direct messages, media sharing, and role-based moderation — all powered by a self-hosted PocketBase backend.
 
-### Live Demo: https://young-wave-0904.web.app/
+**Live Demo:** [youngwave-chat.pages.dev](https://youngwave-chat.pages.dev)
+
+---
 
 ## Features
-Real Time Chat
 
-Messages update instantly using Firebase Firestore listeners. Supports:
+- **Real-time messaging** via PocketBase Server-Sent Events
+- **Public rooms** with owner, moderator, member, and guest roles
+- **Image and video uploads** stored directly in PocketBase
+- **Emoji reactions** on every message
+- **Inline edit and soft delete** with role-aware moderation controls
+- **Guest join requests** — guests request access, room owners approve or reject
+- **Private direct messages** between authenticated users
+- **Typing indicators** with multi-user support
+- **Mobile-responsive layout** with collapsible sidebar
+- **User agreement modal** with persistent acceptance state
 
-Text messages
-
-Images
-
-Edit and delete actions
-
-Message reactions
-
-## Room Based System
-
-Users can create unique rooms with:
-
-Custom room rules
-
-Role assignment (owner, moderator, member, guest)
-
-Guest join requests with approval and rejection
-
-Kick and ban actions
-
-## User Roles and Permissions
-
-Owners can delete rooms, promote or demote moderators, kick and ban members
-
-Moderators can delete messages of members or guests
-
-Members can chat normally
-
-Guests must request access unless approved
-
-## Presence Indicators
-
-Firebase Realtime Database tracks:
-
-Online and offline status
-
-Automatic offline update on disconnect
-
-## Direct Messaging (DM)
-
-Private one on one chat channel created automatically between two authenticated users.
-
-## Image Uploads
-
-Uses Firebase Storage for image messages with previews before sending.
-
-## Room Rules Renderer
-
-Room rules stored in Firestore are rendered as a clean ordered list for better readability.
-
-## Disclaimer Popup
-
-A mandatory user agreement modal appears on login. Acceptance is stored locally. Disagreeing logs the user out.
-
-## Modern UI
-
-Custom gradient background, rounded cards, clean spacing and a simple sidebar menu system.
+---
 
 ## Tech Stack
 
-### Frontend
+| Layer | Technology |
+|-------|------------|
+| Frontend | Vanilla JavaScript (ES Modules), HTML5, CSS3 |
+| Backend | PocketBase (self-hosted, Go-based BaaS) |
+| Frontend Hosting | Cloudflare Pages |
+| Backend Tunnel | Cloudflare Tunnel (`pb.mohitchdev.me`) |
+| Authentication | PocketBase OAuth2 (Google) + ephemeral guest accounts |
 
-HTML
+---
 
-CSS
+## Architecture
 
-Vanilla JavaScript
+```
+Client (Cloudflare Pages)
+        │
+        │  HTTPS API requests
+        ▼
+Cloudflare Tunnel → pb.mohitchdev.me
+        │
+        ▼
+PocketBase (self-hosted backend)
+├── REST API
+├── Realtime SSE subscriptions
+└── File storage
+```
 
-### Firebase Services
+The frontend is a static site deployed globally via Cloudflare Pages. The backend runs on a self-hosted PocketBase instance, exposed securely over HTTPS through a named Cloudflare Tunnel — no open ports, no reverse proxy configuration required.
 
-Firebase Authentication (Google + Anonymous)
+---
 
-Firestore Database
+## Migration: Firebase → PocketBase
 
-Firebase Storage
+This project was originally built on Firebase (Firestore, Firebase Storage, Firebase Auth). It was migrated to PocketBase to resolve Firebase Storage upload failures on the free tier and to gain full control over the backend.
 
-Realtime Database (presence)
+The migration involved:
 
-Firebase Hosting
+- Rewriting all Firestore queries to PocketBase REST API calls
+- Replacing Firebase Storage uploads with PocketBase file fields via FormData
+- Migrating Firebase Auth (Google + Anonymous) to PocketBase OAuth2 and guest account flows
+- Adding video upload support (not feasible within Firebase free tier limits)
+- Preserving all existing features across rooms, DMs, reactions, roles, and moderation
 
-## Hosting
+---
 
-The entire project is deployed on Firebase Hosting with a fast global CDN. No backend server is required. All real time logic is handled through Firebase.
+## Running Locally
 
-## Screenshots
+**Requirements:** PocketBase binary (download from [pocketbase.io](https://pocketbase.io))
 
-<img width="1920" height="864" alt="Screenshot (843)" src="https://github.com/user-attachments/assets/d6abe339-16bc-4f40-8bc9-7ee82408807d" />
-
-<img width="1767" height="875" alt="Screenshot (844)" src="https://github.com/user-attachments/assets/a62ea9cc-c584-48ed-83fb-5b4def878801" />
-
-<img width="1507" height="850" alt="Screenshot (845)" src="https://github.com/user-attachments/assets/2d83ae21-3d7f-445e-afde-5ab2fb20ddf9" />
-
-
-## How It Works With Firebase
-
-### Authentication
-
-The app uses Google Auth Provider and Anonymous Auth. Auth state is tracked in real time using onAuthStateChanged.
-
-### Firestore
-
-Used for:
-
-Rooms collection
-
-Messages subcollections
-
-Members with roles and bans
-
-Join requests
-
-Typing indicators
-
-Reactions
-
-Firestore listeners like onSnapshot make all chat events instant.
-
-### Realtime Database
-
-Used only for presence:
-
-Stores online or offline status
-
-Updated automatically with onDisconnect
-
-### Storage
-
-Used to upload and retrieve images with file preview.
-
-### Hosting
-
-The site is deployed using Firebase Hosting:
-
-firebase deploy
-
-## Local Setup 
-
-### Clone the repository
-git clone https://github.com/MohitCh30/youngwave-chat.git
+```bash
+# Clone the repository
+git clone https://github.com/MohitCh30/youngwave-chat
 cd youngwave-chat
 
-### Install Firebase CLI
-npm install -g firebase-tools
+# Start PocketBase
+cd pocketbase-server
+./pocketbase serve
 
-### Run local server
-firebase serve
+# Serve the frontend
+cd ../public
+python3 -m http.server 3000 --bind 127.0.0.1
+```
 
-### Deploy
-firebase deploy
+Open `http://127.0.0.1:3000` in your browser.  
+PocketBase Admin UI: `http://127.0.0.1:8090/_/`
 
-## What I Learned
+---
 
-Designing real time chat logic using Firestore listeners
+## Database Schema
 
-Implementing role based access systems
+| Collection | Purpose |
+|-----------|---------|
+| `users` | Authentication — Google OAuth and guest accounts |
+| `rooms` | Room metadata: name, rules, creator |
+| `messages` | Room messages with text, image, video, and reactions |
+| `dm_messages` | Direct message history between users |
+| `members` | Room membership and role assignments |
+| `join_requests` | Pending guest access requests awaiting approval |
+| `typing` | Ephemeral typing indicator state per room |
 
-Handling image uploads and previews
+---
 
-Structuring chatrooms and direct messages
+## Project Structure
 
-UI improvements and responsive layout decisions
+```
+youngwave-chat/
+├── public/
+│   ├── index.html        # App shell and layout
+│   ├── main.js           # All application logic (~1350 lines)
+│   ├── style.css         # Theming and responsive layout
+│   └── assets/
+│       └── default.png   # Default user avatar
+└── pocketbase-server/
+    └── pocketbase        # PocketBase binary (not committed)
+```
 
-Using Firebase Hosting for fast deployment
+---
 
-Fixing race conditions in permissions and rule rendering
+## Known Limitations
 
-Creating a working full stack style project without a Node backend
+- **Google OAuth** — the PocketBase OAuth2 popup flow has a Cross-Origin-Opener-Policy conflict on the current Cloudflare Tunnel setup. Guest login is fully functional. OAuth will be resolved on a dedicated server deployment.
+- **Realtime SSE** — Cloudflare's free tunnel applies timeouts to long-lived HTTP connections. The PocketBase client reconnects automatically; messages and room state are not lost.
 
-## Future Improvements
+---
 
-Typing indicator for DMs
+## Roadmap
 
-Better mobile responsiveness
+- [ ] Resolve Google OAuth on dedicated cloud hosting
+- [ ] Typing indicators in direct messages
+- [ ] Read receipts
+- [ ] Push notifications
+- [ ] Dark / light theme toggle
 
-Improved admin dashboard UI
+---
 
-Dark and light themes
+## Author
 
-Read receipts
-
-A proper backend with Node and Express for advanced features
+**Mohit Chaudhary**  
+[github.com/MohitCh30](https://github.com/MohitCh30)

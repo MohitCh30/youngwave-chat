@@ -1,79 +1,40 @@
 # YoungWave
 
-A full-stack real-time chat application built for modern, mobile-first communication. YoungWave supports public rooms, private direct messages, media sharing, and role-based moderation — all powered by a self-hosted PocketBase backend.
+**A shared space for chaos, emotion, and late-night brainwaves.**
 
-**Live Demo:** [youngwave-chat.pages.dev](https://youngwave-chat.pages.dev)
-
----
-
-## Features
-
-- **Real-time messaging** via PocketBase Server-Sent Events
-- **Public rooms** with owner, moderator, member, and guest roles
-- **Image and video uploads** stored directly in PocketBase
-- **Emoji reactions** on every message
-- **Inline edit and soft delete** with role-aware moderation controls
-- **Guest join requests** — guests request access, room owners approve or reject
-- **Private direct messages** between authenticated users
-- **Typing indicators** with multi-user support
-- **Mobile-responsive layout** with collapsible sidebar
-- **User agreement modal** with persistent acceptance state
+YoungWave is a real-time chat app built for Gen-Z — rooms, direct messages, image and video sharing, reactions, and role-based moderation. No fluff, no corporate SaaS energy.
 
 ---
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|------------|
-| Frontend | Vanilla JavaScript (ES Modules), HTML5, CSS3 |
-| Backend | PocketBase (self-hosted, Go-based BaaS) |
-| Frontend Hosting | Cloudflare Pages |
-| Backend Tunnel | Cloudflare Tunnel (`pb.mohitchdev.me`) |
-| Authentication | PocketBase OAuth2 (Google) + ephemeral guest accounts |
+|-------|-----------|
+| Frontend | Vanilla JS, HTML, CSS — no framework, no bundler |
+| Backend | PocketBase (self-hosted SQLite + REST + realtime SSE) |
+| Auth | Google OAuth2 via PocketBase + anonymous guest sessions |
+| Hosting | Cloudflare Pages (frontend) + Cloudflare Tunnel (backend) |
+| Storage | PocketBase file storage (images, videos) |
 
 ---
 
-## Architecture
+## Features
 
-```
-Client (Cloudflare Pages)
-        │
-        │  HTTPS API requests
-        ▼
-Cloudflare Tunnel → pb.mohitchdev.me
-        │
-        ▼
-PocketBase (self-hosted backend)
-├── REST API
-├── Realtime SSE subscriptions
-└── File storage
-```
-
-The frontend is a static site deployed globally via Cloudflare Pages. The backend runs on a self-hosted PocketBase instance, exposed securely over HTTPS through a named Cloudflare Tunnel — no open ports, no reverse proxy configuration required.
+- **Google login** — one click, pulls your name and profile picture automatically
+- **Guest mode** — enter as a voyager, request access to rooms, no account needed
+- **Rooms** — create rooms with custom rules, invite or approve members
+- **Role system** — owner, moderator, member, guest with enforced permissions
+- **Direct messages** — private one-on-one conversations (Google login required)
+- **Image sharing** — attach and send images inline
+- **Video sharing** — send short video clips directly in chat
+- **Reactions** — 9 emoji reactions per message
+- **Typing indicators** — live per-room typing status
+- **Inline editing** — edit your own messages in place
+- **Soft delete** — deleted messages show a tombstone, not a gap
+- **Admin panel** — manage members, approve join requests, ban or kick users, delete rooms
+- **Mobile responsive** — sidebar collapses on small screens, fixed input area
 
 ---
-
-## Migration: Firebase → PocketBase
-
-This project was originally built on Firebase (Firestore, Firebase Storage, Firebase Auth). It was migrated to PocketBase to resolve Firebase Storage upload failures on the free tier and to gain full control over the backend.
-
-The migration involved:
-
-- Rewriting all Firestore queries to PocketBase REST API calls
-- Replacing Firebase Storage uploads with PocketBase file fields via FormData
-- Migrating Firebase Auth (Google + Anonymous) to PocketBase OAuth2 and guest account flows
-- Adding video upload support (not feasible within Firebase free tier limits)
-- Preserving all existing features across rooms, DMs, reactions, roles, and moderation
-
----
-
-## Screenhots
-
-<img width="1920" height="864" alt="518691609-d6abe339-16bc-4f40-8bc9-7ee82408807d" src="https://github.com/user-attachments/assets/fcdd8f0e-32e8-41a6-a914-ba31305b1c23" />  
-
-<img width="1767" height="875" alt="518691773-a62ea9cc-c584-48ed-83fb-5b4def878801" src="https://github.com/user-attachments/assets/4610bcfd-c6cc-48cd-a2e8-da6f1a16d70a" /> 
-
-<img width="1507" height="850" alt="518692149-2d83ae21-3d7f-445e-afde-5ab2fb20ddf9" src="https://github.com/user-attachments/assets/848b5afa-ae52-4432-b39c-508266f8ef90" />
 
 ## Running Locally
 
@@ -88,12 +49,13 @@ cd youngwave-chat
 cd pocketbase-server
 ./pocketbase serve
 
-# Serve the frontend
+# Serve the frontend (in a separate terminal)
 cd ../public
 python3 -m http.server 3000 --bind 127.0.0.1
 ```
 
-Open `http://127.0.0.1:3000` in your browser.  
+Open `http://127.0.0.1:3000` in your browser.
+
 PocketBase Admin UI: `http://127.0.0.1:8090/_/`
 
 ---
@@ -104,7 +66,7 @@ PocketBase Admin UI: `http://127.0.0.1:8090/_/`
 |-----------|---------|
 | `users` | Authentication — Google OAuth and guest accounts |
 | `rooms` | Room metadata: name, rules, creator |
-| `messages` | Room messages with text, image, video, and reactions |
+| `messages` | Room messages with text, image, video, reactions |
 | `dm_messages` | Direct message history between users |
 | `members` | Room membership and role assignments |
 | `join_requests` | Pending guest access requests awaiting approval |
@@ -128,16 +90,24 @@ youngwave-chat/
 
 ---
 
+## Migration Story
+
+YoungWave was originally built on Firebase (Firestore + Firebase Auth + Firebase Storage). The entire backend was migrated to PocketBase — replacing Firestore listeners with PocketBase realtime subscriptions, Firebase Storage uploads with PocketBase file fields via FormData, and Firebase Auth with PocketBase OAuth2 — without touching a single line of HTML or CSS.
+
+Video support was added as part of the migration, something Firebase Storage was making painful with billing restrictions.
+
+---
+
 ## Known Limitations
 
-- **Google OAuth** — the PocketBase OAuth2 popup flow has a Cross-Origin-Opener-Policy conflict on the current Cloudflare Tunnel setup. Guest login is fully functional. OAuth will be resolved on a dedicated server deployment.
 - **Realtime SSE** — Cloudflare's free tunnel applies timeouts to long-lived HTTP connections. The PocketBase client reconnects automatically; messages and room state are not lost.
+- **Server uptime** — currently tunneled from a local machine. App availability depends on the host being online. Oracle Cloud Free Tier deployment is planned.
 
 ---
 
 ## Roadmap
 
-- [ ] Resolve Google OAuth on dedicated cloud hosting
+- [ ] Dedicated cloud hosting (Oracle Cloud Free Tier)
 - [ ] Typing indicators in direct messages
 - [ ] Read receipts
 - [ ] Push notifications

@@ -178,7 +178,10 @@ if (adminCloseBtn && adminPanel) {
 if (googleBtn) {
   googleBtn.onclick = async () => {
     try {
-      await pb.collection("users").authWithOAuth2({ provider: "google" });
+      const oauthData = await pb.collection("users").authWithOAuth2({ provider: "google" });
+      if (pb.authStore.isValid && oauthData?.meta?.name) {
+        await pb.collection("users").update(pb.authStore.model.id, { name: oauthData.meta.name });
+      }
       if (pb.authStore.isValid) {
         setTimeout(() => window.location.reload(), 300);
       }

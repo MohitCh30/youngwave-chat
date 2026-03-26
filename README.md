@@ -6,6 +6,8 @@ YoungWave is a real-time chat app built for Gen-Z — rooms, direct messages, im
 
 ---
 
+**Live Demo:** [youngwave-chat.pages.dev](https://youngwave-chat.pages.dev)
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -43,6 +45,26 @@ YoungWave is a real-time chat app built for Gen-Z — rooms, direct messages, im
 - **Soft delete** — deleted messages show a tombstone, not a gap
 - **Admin panel** — manage members, approve join requests, ban or kick users, delete rooms
 - **Mobile responsive** — sidebar collapses on small screens, fixed input area
+
+---
+
+## Architecture
+
+```
+Client (Cloudflare Pages)
+        │
+        │  HTTPS API requests
+        ▼
+Cloudflare Tunnel → pb.mohitchdev.me
+        │
+        ▼
+PocketBase (self-hosted backend)
+├── REST API
+├── Realtime SSE subscriptions
+└── File storage
+```
+
+The frontend is a static site deployed globally via Cloudflare Pages. The backend runs on a self-hosted PocketBase instance, exposed securely over HTTPS through a named Cloudflare Tunnel — no open ports, no reverse proxy configuration required.
 
 ---
 

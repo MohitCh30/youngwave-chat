@@ -179,8 +179,11 @@ if (googleBtn) {
   googleBtn.onclick = async () => {
     try {
       const oauthData = await pb.collection("users").authWithOAuth2({ provider: "google" });
-      if (pb.authStore.isValid && oauthData?.meta?.name) {
-        await pb.collection("users").update(pb.authStore.model.id, { name: oauthData.meta.name });
+      if (pb.authStore.isValid && oauthData?.meta) {
+        const updates = {};
+        if (oauthData.meta.name) updates.name = oauthData.meta.name;
+        if (oauthData.meta.avatarUrl) updates.avatarUrl = oauthData.meta.avatarUrl;
+        if (Object.keys(updates).length) await pb.collection("users").update(pb.authStore.model.id, updates);
       }
       if (pb.authStore.isValid) {
         setTimeout(() => window.location.reload(), 300);

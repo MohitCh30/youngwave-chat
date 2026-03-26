@@ -179,7 +179,8 @@ if (adminCloseBtn && adminPanel) {
 if (googleBtn) {
   googleBtn.onclick = async () => {
     try {
-      await pb.collection("users").authWithOAuth2({ provider: "google" });
+      const authData = await pb.collection("users").authWithOAuth2({ provider: "google" });
+      if (authData) window.location.reload();
     } catch (e) {
       console.error(e);
       alert("Google login failed.");

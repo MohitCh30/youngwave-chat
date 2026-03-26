@@ -178,9 +178,9 @@ if (adminCloseBtn && adminPanel) {
 if (googleBtn) {
   googleBtn.onclick = async () => {
     try {
-      const authData = await pb.collection("users").authWithOAuth2({ provider: "google" });
-      if (authData && pb.authStore.isValid) {
-        pb.authStore.save(pb.authStore.token, pb.authStore.model);
+      await pb.collection("users").authWithOAuth2({ provider: "google" });
+      if (pb.authStore.isValid) {
+        setTimeout(() => window.location.reload(), 300);
       }
     } catch (e) {
       console.error(e);

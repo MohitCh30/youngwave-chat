@@ -75,7 +75,7 @@ function isGuestUser(user) {
 }
 
 function displayNameOf(user) {
-  return user?.name || "Guest";
+  return user?.name || user?.username || user?.email?.split("@")[0] || "Guest";
 }
 
 function photoOf(user) {

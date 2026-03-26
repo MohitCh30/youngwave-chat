@@ -1,8 +1,6 @@
 import PocketBase from "https://cdn.jsdelivr.net/npm/pocketbase@0.21.3/dist/pocketbase.es.mjs";
 const pb = new PocketBase("https://pb.mohitchdev.me");
 pb.autoCancellation(false);
-
-pb.collection("users").authRefresh().catch(() => {});
 // ---------------- STATE ----------------
 let currentRoom = null; // room id
 let currentRoomName = null;
@@ -181,10 +179,9 @@ if (googleBtn) {
   googleBtn.onclick = async () => {
     try {
       const authData = await pb.collection("users").authWithOAuth2({ provider: "google" });
-      console.log("OAuth result:", authData);
-      console.log("Auth valid:", pb.authStore.isValid);
-      console.log("Auth model:", pb.authStore.model);
-      if (authData) window.location.reload();
+      if (authData && pb.authStore.isValid) {
+        pb.authStore.save(pb.authStore.token, pb.authStore.model);
+      }
     } catch (e) {
       console.error(e);
       alert("Google login failed.");

@@ -180,6 +180,9 @@ if (googleBtn) {
   googleBtn.onclick = async () => {
     try {
       const authData = await pb.collection("users").authWithOAuth2({ provider: "google" });
+      console.log("OAuth result:", authData);
+      console.log("Auth valid:", pb.authStore.isValid);
+      console.log("Auth model:", pb.authStore.model);
       if (authData) window.location.reload();
     } catch (e) {
       console.error(e);

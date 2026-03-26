@@ -1,5 +1,5 @@
 import PocketBase from "https://cdn.jsdelivr.net/npm/pocketbase@0.21.3/dist/pocketbase.es.mjs";
-const pb = new PocketBase("https://previous-following-spending-ability.trycloudflare.com");
+const pb = new PocketBase("https://pb.mohitchdev.me");
 
 pb.collection("users").authRefresh().catch(() => {});
 // ---------------- STATE ----------------

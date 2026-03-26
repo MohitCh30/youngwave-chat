@@ -67,6 +67,14 @@ The migration involved:
 
 ---
 
+## Screenhots
+
+<img width="1920" height="864" alt="518691609-d6abe339-16bc-4f40-8bc9-7ee82408807d" src="https://github.com/user-attachments/assets/fcdd8f0e-32e8-41a6-a914-ba31305b1c23" />  
+
+<img width="1767" height="875" alt="518691773-a62ea9cc-c584-48ed-83fb-5b4def878801" src="https://github.com/user-attachments/assets/4610bcfd-c6cc-48cd-a2e8-da6f1a16d70a" /> 
+
+<img width="1507" height="850" alt="518692149-2d83ae21-3d7f-445e-afde-5ab2fb20ddf9" src="https://github.com/user-attachments/assets/848b5afa-ae52-4432-b39c-508266f8ef90" />
+
 ## Running Locally
 
 **Requirements:** PocketBase binary (download from [pocketbase.io](https://pocketbase.io))
@@ -134,10 +142,3 @@ youngwave-chat/
 - [ ] Read receipts
 - [ ] Push notifications
 - [ ] Dark / light theme toggle
-
----
-
-## Author
-
-**Mohit Chaudhary**  
-[github.com/MohitCh30](https://github.com/MohitCh30)

@@ -18,6 +18,16 @@ YoungWave is a real-time chat app built for Gen-Z — rooms, direct messages, im
 
 ---
 
+## Screenshots 
+
+<img width="1920" height="864" alt="518691609-d6abe339-16bc-4f40-8bc9-7ee82408807d" src="https://github.com/user-attachments/assets/7cfbeba6-cb0d-4bf6-8ee9-a91522813941" /> 
+
+<img width="1767" height="875" alt="518691773-a62ea9cc-c584-48ed-83fb-5b4def878801" src="https://github.com/user-attachments/assets/c5bf77ed-4d37-46c5-98ad-4132457ec799" /> 
+
+<img width="1507" height="850" alt="518692149-2d83ae21-3d7f-445e-afde-5ab2fb20ddf9" src="https://github.com/user-attachments/assets/1a389141-b8a5-43ff-a37f-ed261daad37c" />
+
+<img width="1580" height="697" alt="Screenshot From 2026-03-26 17-35-08" src="https://github.com/user-attachments/assets/4eeeeeb4-01b6-47cd-969b-e3a8ddd1dc1e" />
+
 ## Features
 
 - **Google login** — one click, pulls your name and profile picture automatically

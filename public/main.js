@@ -1,72 +1,16 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-import {
-  getFirestore,
-  collection,
-  addDoc,
-  onSnapshot,
-  query,
-  orderBy,
-  serverTimestamp,
-  doc,
-  deleteDoc,
-  getDoc,
-  getDocs,
-  setDoc,
-  updateDoc,
-  arrayUnion,
-  arrayRemove,
-} from "https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js";
-import {
-  getAuth,
-  onAuthStateChanged,
-  signInWithPopup,
-  GoogleAuthProvider,
-  signInAnonymously,
-  signOut,
-} from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
-import {
-  getStorage,
-  ref as storageRef,
-  uploadBytes,
-  getDownloadURL,
-} from "https://www.gstatic.com/firebasejs/12.6.0/firebase-storage.js";
-import {
-  getDatabase,
-  ref as rtdbRef,
-  set as rtdbSet,
-  onDisconnect as rtdbOnDisconnect,
-} from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
+import PocketBase from "https://cdn.jsdelivr.net/npm/pocketbase@0.21.3/dist/pocketbase.es.mjs";
+const pb = new PocketBase("http://127.0.0.1:8090");
 
-// ---------------- FIREBASE INIT ----------------
-const firebaseConfig = {
-  apiKey: "AIzaSyAwi4mJTNA0v5z_b8EJmyXxnYRi0bTf0fs",
-  authDomain: "young-wave-0904.firebaseapp.com",
-  projectId: "young-wave-0904",
-  storageBucket: "young-wave-0904.firebasestorage.app",
-  messagingSenderId: "394074722478",
-  appId: "1:394074722478:web:60bf3fbcddc53d73039d3f",
-  databaseURL: "https://young-wave-0904-default-rtdb.firebaseio.com",
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
-const storage = getStorage(app, "gs://young-wave-0904.firebasestorage.app");
-
-const rtdb = getDatabase(app);
-const provider = new GoogleAuthProvider();
-
+pb.collection("users").authRefresh().catch(() => {});
 // ---------------- STATE ----------------
-let currentRoom = null;
-let currentDM = null;
+let currentRoom = null; // room id
+let currentRoomName = null;
+let currentDM = null; // chat id
 let currentRoomRole = null; // owner/moderator/member/guest
-let unsubscribeMessages = null;
-let unsubscribeTyping = null;
-let unsubscribeMembers = null;
-let unsubscribeRequests = null;
 let typingTimeout = null;
-
-
+let roomsSubActive = false;
+let guestEmail = null;
+let guestPassword = null;
 
 // ---------------- DOM ----------------
 const loginScreen = document.getElementById("login-screen");
@@ -112,52 +56,101 @@ const memberListEl = document.getElementById("member-list");
 const deleteRoomBtn = document.getElementById("deleteRoomBtn");
 const imageInput = document.getElementById("imageUpload");
 
+const attachmentPreview = document.getElementById("attachmentPreview");
 
-// ---------------- SMALL WIRING ----------------
+// ---------------- UTIL ----------------
+function esc(v) {
+  return String(v || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
 
-// bind input after login (DOM guaranteed)
-onAuthStateChanged(auth, () => {
+function nowNum() {
+  return Date.now();
+}
 
-  if (attachBtn && imageInput) {
-    attachBtn.onclick = () => imageInput.click();
+function currentUser() {
+  return pb.authStore.isValid ? pb.authStore.model : null;
+}
+
+function isGuestUser(user) {
+  return Boolean(user && user.email && user.email.endsWith("@youngwave.temp"));
+}
+
+function displayNameOf(user) {
+  return user?.name || "Guest";
+}
+
+function photoOf(user) {
+  return user?.avatarUrl || "assets/default.png";
+}
+
+function getDMChatId(uid1, uid2) {
+  return uid1 < uid2 ? `${uid1}__${uid2}` : `${uid2}__${uid1}`;
+}
+
+function formatCreated(record) {
+  if (!record?.created) return "";
+  return new Date(record.created).toLocaleTimeString();
+}
+
+function renderRules(rawRules) {
+  const rules = rawRules || "";
+  if (!rules.trim()) {
+    roomRulesEl.innerHTML = "";
+    roomRulesEl.classList.add("hidden");
+    return;
   }
-});
+  const parts = rules
+    .split(/[\n\.]/)
+    .map((r) => r.trim())
+    .filter((r) => r.length > 0);
 
-
-if (adminCloseBtn && adminPanel) {
-  adminCloseBtn.addEventListener("click", () => {
-    adminPanel.classList.remove("open");
-  });
+  roomRulesEl.innerHTML = `
+    <div class="rules-box">
+      <ol>
+        ${parts.map((p) => `<li>${p}</li>`).join("")}
+      </ol>
+    </div>
+  `;
+  roomRulesEl.classList.remove("hidden");
 }
 
-// ---------------- AUTH BUTTONS ----------------
-if (googleBtn) {
-  googleBtn.onclick = () =>
-    signInWithPopup(auth, provider).catch((e) => console.error(e));
-}
-if (anonBtn) {
-  anonBtn.onclick = () =>
-    signInAnonymously(auth).catch((e) => console.error(e));
-}
-
-// ---------------- PRESENCE (RTDB) ----------------
-function setupPresence(user) {
-  if (!user) return;
-  try {
-    const statusRef = rtdbRef(rtdb, `status/${user.uid}`);
-    const base = {
-      displayName: user.displayName || "Guest",
-      lastChanged: Date.now(),
-    };
-    rtdbSet(statusRef, { ...base, state: "online" }).catch((e) =>
-      console.warn("Presence error:", e)
-    );
-    rtdbOnDisconnect(statusRef)
-      .set({ ...base, state: "offline", lastChanged: Date.now() })
-      .catch((e) => console.warn("onDisconnect error:", e));
-  } catch (e) {
-    console.warn("Presence setup skipped:", e);
+function createVideoElements() {
+  let videoInput = document.getElementById("videoUpload");
+  if (!videoInput && imageInput?.parentElement) {
+    videoInput = document.createElement("input");
+    videoInput.id = "videoUpload";
+    videoInput.type = "file";
+    videoInput.accept = "video/mp4,video/webm,video/ogg";
+    videoInput.className = "file-input";
+    imageInput.parentElement.appendChild(videoInput);
   }
+
+  let videoBtn = document.getElementById("videoBtn");
+  if (!videoBtn && attachBtn?.parentElement) {
+    videoBtn = document.createElement("button");
+    videoBtn.id = "videoBtn";
+    videoBtn.type = "button";
+    videoBtn.className = attachBtn.className;
+    videoBtn.textContent = "🎥";
+    attachBtn.insertAdjacentElement("afterend", videoBtn);
+  }
+
+  return { videoInput, videoBtn };
+}
+
+const { videoInput, videoBtn } = createVideoElements();
+
+// ---------------- SUBS CLEANUP ----------------
+function clearSubs() {
+  pb.collection("messages").unsubscribe("*");
+  pb.collection("typing").unsubscribe("*");
+  pb.collection("members").unsubscribe("*");
+  pb.collection("join_requests").unsubscribe("*");
+  pb.collection("dm_messages").unsubscribe("*");
+
+  stopTyping();
+  if (adminPanel) adminPanel.classList.remove("open");
+  currentRoomRole = null;
 }
 
 // ---------------- SIDEBAR / TOGGLES ----------------
@@ -176,552 +169,51 @@ if (sidebarToggle && sidebar) {
   });
 }
 
-// Settings (⚙) → open admin panel if allowed
-if (settingsBtn) {
-  settingsBtn.addEventListener("click", () => {
-    if (!currentRoom) return alert("Select a room first.");
-    const user = auth.currentUser;
-    if (!user) return alert("Login first.");
-    if (currentRoomRole !== "owner" && currentRoomRole !== "moderator")
-      return alert("Only owners/moderators can open room settings.");
-    setupAdminPanel(currentRoom);
-    adminPanel.classList.add("open");
-  });
-}
-
-// ---------------- ROOMS LIST ----------------
-const roomsRef = collection(db, "rooms");
-if (roomListEl) {
-  onSnapshot(roomsRef, (snapshot) => {
-    roomListEl.innerHTML = "";
-    snapshot.forEach((roomDoc) => {
-      const roomId = roomDoc.id;
-      const li = document.createElement("li");
-      li.className = "room-row";
-      li.textContent = roomId;
-      li.style.cursor = "pointer";
-      li.onclick = () => onRoomClick(roomId);
-      roomListEl.appendChild(li);
-    });
-  });
-}
-
-// ---------------- ROOM CLICK / JOIN FLOW ----------------
-async function onRoomClick(roomId) {
-  const user = auth.currentUser;
-  if (!user) {
-    alert("Log in to open rooms.");
-    return;
-  }
-
-  const memberRef = doc(db, "rooms", roomId, "members", user.uid);
-
-  try {
-    const memberSnap = await getDoc(memberRef);
-
-    if (memberSnap.exists() && memberSnap.data().banned) {
-      alert("You are banned from this room.");
-      return;
-    }
-
-    // Guest flow: must request access
-    if (user.isAnonymous) {
-      if (memberSnap.exists()) {
-        await loadRoom(roomId);
-      } else {
-        const ok = confirm(`Request to join "${roomId}" as a guest?`);
-        if (!ok) return;
-
-        await setDoc(doc(db, "rooms", roomId, "joinRequests", user.uid), {
-          uid: user.uid,
-          displayName: "Guest",
-          requestedAt: Date.now(),
-        });
-
-        alert("Join request sent. You'll auto-enter when approved.");
-
-        const unsub = onSnapshot(memberRef, (snap) => {
-          if (snap.exists() && !snap.data().banned) {
-            unsub();
-            loadRoom(roomId);
-          }
-        });
-      }
-      return;
-    }
-
-    // Logged-in user: direct join
-    await loadRoom(roomId);
-  } catch (e) {
-    console.error("onRoomClick error:", e);
-    alert("Failed to open room (permissions?). Check rules.");
-  }
-}
-
-// ---------------- CREATE ROOM ----------------
-if (createRoomBtnHeader) {
-  createRoomBtnHeader.addEventListener("click", () => {
-    const user = auth.currentUser;
-    if (!user || user.isAnonymous) {
-      alert("Only logged-in members can create rooms.");
-      return;
-    }
-    modal.classList.remove("hidden");
-    roomNameInput.value = "";
-    roomRulesInput.value = "";
-  });
-}
-
-if (modalCancelBtn) {
-  modalCancelBtn.addEventListener("click", () =>
-    modal.classList.add("hidden")
-  );
-}
-
-if (modalCreateBtn) {
-  modalCreateBtn.addEventListener("click", async () => {
-    const user = auth.currentUser;
-    if (!user || user.isAnonymous) {
-      alert("Only logged-in members can create rooms.");
-      return;
-    }
-    const name = roomNameInput.value.trim();
-    const rules = roomRulesInput.value.trim();
-    if (!name) {
-      alert("Room name required.");
-      return;
-    }
-
-    const roomRef = doc(db, "rooms", name);
-    await setDoc(roomRef, {
-      createdAt: Date.now(),
-      createdBy: user.uid,
-      rules: rules || "",
-    });
-
-    await setDoc(
-      doc(db, "rooms", name, "members", user.uid),
-      {
-        role: "owner",
-        displayName: user.displayName || "Owner",
-        joinedAt: Date.now(),
-      },
-      { merge: true }
-    );
-
-    modal.classList.add("hidden");
-  });
-}
-
-// ---------------- SUBSCRIPTION CLEANUP ----------------
-function clearSubs() {
-  if (unsubscribeMessages) {
-    unsubscribeMessages();
-    unsubscribeMessages = null;
-  }
-  if (unsubscribeTyping) {
-    unsubscribeTyping();
-    unsubscribeTyping = null;
-  }
-  if (unsubscribeMembers) {
-    unsubscribeMembers();
-    unsubscribeMembers = null;
-  }
-  if (unsubscribeRequests) {
-    unsubscribeRequests();
-    unsubscribeRequests = null;
-  }
-  stopTyping();
-  if (adminPanel) adminPanel.classList.remove("open");
-  currentRoomRole = null;
-}
-
-// ---------------- ADMIN PANEL ----------------
-function setupAdminPanel(roomId) {
-  const user = auth.currentUser;
-  if (
-    !user ||
-    !currentRoomRole ||
-    (currentRoomRole !== "owner" && currentRoomRole !== "moderator")
-  ) {
+if (adminCloseBtn && adminPanel) {
+  adminCloseBtn.addEventListener("click", () => {
     adminPanel.classList.remove("open");
-    memberListEl.innerHTML = "";
-    requestListEl.innerHTML = "";
-    return;
-  }
-
-  adminRoomTitle.textContent = `Settings – ${roomId}`;
-  adminInfoEl.textContent = `You are ${currentRoomRole.toUpperCase()} of this room.`;
-
-  // JOIN REQUESTS
-  const reqRef = collection(db, "rooms", roomId, "joinRequests");
-  if (unsubscribeRequests) {
-    unsubscribeRequests();
-    unsubscribeRequests = null;
-  }
-  unsubscribeRequests = onSnapshot(reqRef, (snap) => {
-    requestListEl.innerHTML = "";
-    snap.forEach((docSnap) => {
-      const data = docSnap.data();
-      const li = document.createElement("li");
-      li.className = "request-item";
-
-      const nameDiv = document.createElement("div");
-      nameDiv.className = "request-name";
-      nameDiv.textContent = data.displayName || "Guest";
-
-      const actions = document.createElement("div");
-      actions.className = "request-actions";
-
-      const approve = document.createElement("button");
-      approve.className = "approve";
-      approve.textContent = "Approve";
-      approve.onclick = async () => {
-        await setDoc(
-          doc(db, "rooms", roomId, "members", data.uid),
-          {
-            role: "guest",
-            displayName: data.displayName || "Guest",
-            joinedAt: Date.now(),
-          },
-          { merge: true }
-        );
-        await deleteDoc(doc(db, "rooms", roomId, "joinRequests", data.uid));
-      };
-
-      const reject = document.createElement("button");
-      reject.className = "reject";
-      reject.textContent = "Reject";
-      reject.onclick = async () => {
-        await deleteDoc(doc(db, "rooms", roomId, "joinRequests", data.uid));
-      };
-
-      actions.appendChild(approve);
-      actions.appendChild(reject);
-      li.appendChild(nameDiv);
-      li.appendChild(actions);
-      requestListEl.appendChild(li);
-    });
   });
+}
 
-  // MEMBERS
-  const membersRef = collection(db, "rooms", roomId, "members");
-  if (unsubscribeMembers) {
-    unsubscribeMembers();
-    unsubscribeMembers = null;
-  }
-  unsubscribeMembers = onSnapshot(membersRef, (snap) => {
-    memberListEl.innerHTML = "";
-    snap.forEach((docSnap) => {
-      const uid = docSnap.id;
-      const data = docSnap.data();
-
-      const li = document.createElement("li");
-      li.className = "member-item";
-
-      const left = document.createElement("div");
-      left.className = "member-name";
-      left.textContent = data.displayName || "Member";
-
-      const roleSpan = document.createElement("span");
-      roleSpan.className = "member-role";
-      roleSpan.textContent = data.role;
-      left.appendChild(roleSpan);
-
-      const right = document.createElement("div");
-      right.className = "member-actions";
-
-      const isSelf = auth.currentUser && uid === auth.currentUser.uid;
-
-      if (!isSelf) {
-        if (currentRoomRole === "owner") {
-          const promote = document.createElement("button");
-          promote.className = "promote";
-          if (data.role === "moderator") {
-            promote.textContent = "Remove mod";
-            promote.onclick = async () =>
-              await updateDoc(doc(db, "rooms", roomId, "members", uid), {
-                role: "member",
-              });
-          } else {
-            promote.textContent = "Make mod";
-            promote.onclick = async () =>
-              await updateDoc(doc(db, "rooms", roomId, "members", uid), {
-                role: "moderator",
-              });
-          }
-          right.appendChild(promote);
-        }
-
-        const kick = document.createElement("button");
-        kick.className = "kick";
-        kick.textContent = "Kick";
-        kick.onclick = async () =>
-          await deleteDoc(doc(db, "rooms", roomId, "members", uid));
-        right.appendChild(kick);
-
-        const ban = document.createElement("button");
-        ban.className = "ban";
-        ban.textContent = "Ban";
-        ban.onclick = async () =>
-          await updateDoc(doc(db, "rooms", roomId, "members", uid), {
-            banned: true,
-          });
-        right.appendChild(ban);
-      }
-
-      li.appendChild(left);
-      li.appendChild(right);
-      memberListEl.appendChild(li);
-    });
-  });
-
-  // Delete room (owner only)
-  deleteRoomBtn.style.display = currentRoomRole === "owner" ? "block" : "none";
-  deleteRoomBtn.onclick = async () => {
-    const sure = confirm(`Delete room "${roomId}" and all its messages?`);
-    if (!sure) return;
-    await deleteDoc(doc(db, "rooms", roomId));
-    clearSubs();
-    currentRoom = null;
-    chatHeaderEl.textContent = "Select a room";
-    msgDiv.innerHTML = "";
-    roomRulesEl.textContent = "";
-    roomRulesEl.classList.add("hidden");
+// ---------------- AUTH BUTTONS ----------------
+if (googleBtn) {
+  googleBtn.onclick = async () => {
+    try {
+      await pb.collection("users").authWithOAuth2({ provider: "google" });
+    } catch (e) {
+      console.error(e);
+      alert("Google login failed.");
+    }
   };
 }
 
-// ---------------- LOAD ROOM ----------------
-async function loadRoom(roomName) {
-  clearSubs();
+if (anonBtn) {
+  anonBtn.onclick = async () => {
+    try {
+      guestEmail = `guest_${Date.now()}@youngwave.temp`;
+      guestPassword = `${Math.random().toString(36).slice(2)}Aa1!`;
 
-  currentRoom = roomName;
-  currentDM = null;
-  chatHeaderEl.textContent = roomName;
-  msgDiv.innerHTML = "";
+      await pb.collection("users").create({
+        email: guestEmail,
+        password: guestPassword,
+        passwordConfirm: guestPassword,
+        name: "Guest",
+      });
 
-  const user = auth.currentUser;
-
-  let roomSnap = null;
-  let roomData = null;
-  const roomDocRef = doc(db, "rooms", roomName);
-
-  try {
-    roomSnap = await getDoc(roomDocRef);
-    if (roomSnap.exists()) {
-      roomData = roomSnap.data();
-
-      const rules = roomData.rules || "";
-      if (rules.trim()) {
-        const parts = rules
-          .split(/[\n\.]/)               
-          .map(r => r.trim())
-          .filter(r => r.length > 0);
-      
-          roomRulesEl.innerHTML = `
-          <div class="rules-box">
-            <ol>
-              ${parts.map(p => `<li>${p}</li>`).join("")}
-            </ol>
-          </div>
-        `;
-        
-      
-        roomRulesEl.classList.remove("hidden");
-      } else {
-        roomRulesEl.innerHTML = "";
-        roomRulesEl.classList.add("hidden");
-      }
-      
-
-      // OLD ROOM FIX: if no createdBy, assign to first logged-in non-guest who opens it
-      if (!roomData.createdBy && user && !user.isAnonymous) {
-        try {
-          await updateDoc(roomDocRef, { createdBy: user.uid });
-          roomData.createdBy = user.uid;
-        } catch (e) {
-          console.warn("Could not set createdBy for old room:", e);
-        }
-      }
-    } else {
-      roomRulesEl.textContent = "";
-      roomRulesEl.classList.add("hidden");
+      await pb.collection("users").authWithPassword(guestEmail, guestPassword);
+    } catch (e) {
+      console.error(e);
+      alert("Guest login failed.");
     }
-  } catch (e) {
-    console.warn("room read error", e);
-    roomRulesEl.textContent = "";
-    roomRulesEl.classList.add("hidden");
-  }
-
-  currentRoomRole = null;
-
-  if (user) {
-    const memberRef = doc(db, "rooms", roomName, "members", user.uid);
-    const memberSnap = await getDoc(memberRef);
-
-    const base = {
-      displayName: user.displayName || (user.isAnonymous ? "Guest" : "Member"),
-      joinedAt: Date.now(),
-    };
-
-    const roomCreatorId = roomData ? roomData.createdBy : null;
-
-    let roleToSet;
-
-    if (memberSnap.exists()) {
-      const data = memberSnap.data();
-
-      // 🔥 Key fix for old rooms:
-      // if you're the creator, you are owner even if old doc says "member"
-      if (roomCreatorId && user.uid === roomCreatorId) {
-        roleToSet = "owner";
-      } else if (data.role) {
-        roleToSet = data.role;
-      } else {
-        roleToSet = roomCreatorId === user.uid ? "owner" : "member";
-      }
-    } else {
-      roleToSet = roomCreatorId === user.uid ? "owner" : "member";
-    }
-
-    currentRoomRole = roleToSet;
-    await setDoc(memberRef, { ...base, role: roleToSet }, { merge: true });
-  }
-
-  // Messages
-  const msgRef = collection(db, "rooms", roomName, "messages");
-  const q = query(msgRef, orderBy("timestamp"));
-  unsubscribeMessages = onSnapshot(q, (snapshot) => {
-    msgDiv.innerHTML = "";
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      const msg = document.createElement("div");
-      msg.className = "message";
-
-      const isSelf = auth.currentUser && data.uid === auth.currentUser.uid;
-      if (isSelf) msg.classList.add("right");
-
-      if (data.deleted) {
-        const tomb = document.createElement("div");
-        tomb.className = "deleted-label";
-        tomb.textContent =
-          data.deletedByRole === "admin"
-            ? "This message was deleted by an admin."
-            : "This message was deleted.";
-        msg.appendChild(tomb);
-        msgDiv.appendChild(msg);
-        return;
-      }
-
-      const timeString = data.timestamp
-        ? new Date(data.timestamp.toDate()).toLocaleTimeString()
-        : "";
-      const editedLabel = data.edited ? " (edited)" : "";
-
-      const header = document.createElement("div");
-      header.className = "message-header";
-
-      const avatar = document.createElement("img");
-      avatar.className = "msg-photo";
-      avatar.src = data.photo || "assets/default.png";
-
-      const nameSpan = document.createElement("span");
-      nameSpan.className = "msg-name";
-      nameSpan.textContent = data.user;
-
-      const timeSpan = document.createElement("span");
-      timeSpan.className = "msg-time";
-      timeSpan.textContent = timeString;
-
-      header.appendChild(avatar);
-      header.appendChild(nameSpan);
-      header.appendChild(timeSpan);
-
-      const textDiv = document.createElement("div");
-      textDiv.className = "text";
-      textDiv.textContent = (data.text || "") + editedLabel;
-
-      msg.appendChild(header);
-      msg.appendChild(textDiv);
-
-      if (data.image) {
-        const img = document.createElement("img");
-        img.className = "msg-image";
-        img.src = data.image;
-        msg.appendChild(img);
-      }
-
-      if (
-        nameSpan &&
-        data.uid &&
-        auth.currentUser &&
-        !auth.currentUser.isAnonymous &&
-        data.uid !== auth.currentUser.uid
-      ) {
-        nameSpan.onclick = () =>
-          openDirectMessage(data.uid, data.user || "User");
-      }
-
-      const canEdit = isSelf;
-      const senderRole = data.role || "member";
-
-let canDelete = false;
-
-if (isSelf) {
-  canDelete = true; 
-} else if (currentRoomRole === "owner") {
-  canDelete = true; 
-} else if (currentRoomRole === "moderator") {
-  
-  if (senderRole === "member" || senderRole === "guest") {
-    canDelete = true;
-  }
+  };
 }
 
-      if (canEdit) {
-        const editBtn = document.createElement("button");
-        editBtn.className = "edit-btn";
-        editBtn.textContent = "Edit";
-        editBtn.onclick = () =>
-          inlineEditMessageRoom(roomName, docSnap.id, textDiv, data.text || "");
-        msg.appendChild(editBtn);
-      }
+if (attachBtn && imageInput) {
+  attachBtn.onclick = () => imageInput.click();
+}
 
-      if (canDelete) {
-        const del = document.createElement("button");
-        del.className = "delete-btn";
-        del.textContent = "Delete";
-        del.onclick = () =>
-          softDeleteRoomMessage(roomName, docSnap.id, !isSelf);
-        msg.appendChild(del);
-      }
-
-      buildReactionsUI("room", roomName, docSnap.id, data, msg);
-      msgDiv.appendChild(msg);
-    });
-    msgDiv.scrollTop = msgDiv.scrollHeight;
-  });
-
-  // Typing (Firestore docs)
-  const typingRef = collection(db, "rooms", roomName, "typing");
-  unsubscribeTyping = onSnapshot(typingRef, (snapshot) => {
-    const typingUsers = [];
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      if (!auth.currentUser || data.uid !== auth.currentUser.uid) {
-        typingUsers.push(data.name || "Someone");
-      }
-    });
-    if (typingUsers.length === 0) {
-      typingIndicatorEl.textContent = "";
-    } else if (typingUsers.length === 1) {
-      typingIndicatorEl.textContent = `${typingUsers[0]} is typing...`;
-    } else {
-      typingIndicatorEl.textContent = `${typingUsers[0]} and ${
-        typingUsers.length - 1
-      } others are typing...`;
-    }
-  });
+if (videoBtn && videoInput) {
+  videoBtn.onclick = () => videoInput.click();
 }
 
 // ---------------- REACTIONS ----------------
@@ -737,7 +229,7 @@ const REACTIONS = [
   { key: "skull", icon: "💀" },
 ];
 
-function buildReactionsUI(kind, parentId, msgId, data, container) {
+function buildReactionsUI(kind, msgId, data, container) {
   const bar = document.createElement("div");
   bar.className = "reaction-bar";
 
@@ -747,7 +239,7 @@ function buildReactionsUI(kind, parentId, msgId, data, container) {
     const btn = document.createElement("button");
     btn.className = "reaction-btn";
     btn.textContent = r.icon;
-    btn.onclick = () => toggleReaction(kind, parentId, msgId, r.key);
+    btn.onclick = () => toggleReaction(kind, msgId, r.key);
     bar.appendChild(btn);
 
     const list = reactions[r.key] || [];
@@ -762,32 +254,581 @@ function buildReactionsUI(kind, parentId, msgId, data, container) {
   container.appendChild(bar);
 }
 
-async function toggleReaction(kind, parentId, msgId, type) {
-  if (!auth.currentUser) return;
+async function toggleReaction(kind, msgId, type) {
+  const user = currentUser();
+  if (!user) return;
 
-  const basePath =
-    kind === "room"
-      ? ["rooms", parentId, "messages", msgId]
-      : ["dm", parentId, "messages", msgId];
+  const coll = kind === "room" ? "messages" : "dm_messages";
 
-  const msgRef = doc(db, ...basePath);
-  const snap = await getDoc(msgRef);
-  if (!snap.exists()) return;
-  const data = snap.data();
-  const reactions = data.reactions || {};
-  const list = reactions[type] || [];
-  const hasReacted = list.includes(auth.currentUser.uid);
-  const field = `reactions.${type}`;
-
-  if (hasReacted) {
-    await updateDoc(msgRef, { [field]: arrayRemove(auth.currentUser.uid) });
-  } else {
-    await updateDoc(msgRef, { [field]: arrayUnion(auth.currentUser.uid) });
+  try {
+    const record = await pb.collection(coll).getOne(msgId);
+    const reactions = record.reactions || {};
+    const list = reactions[type] || [];
+    if (list.includes(user.id)) {
+      reactions[type] = list.filter((id) => id !== user.id);
+    } else {
+      reactions[type] = [...list, user.id];
+    }
+    await pb.collection(coll).update(msgId, { reactions });
+  } catch (e) {
+    console.error("reaction update failed:", e);
   }
 }
 
+// ---------------- ROOM HELPERS ----------------
+async function getRoomByName(roomName) {
+  const records = await pb
+    .collection("rooms")
+    .getFullList({ filter: `name = "${esc(roomName)}"`, sort: "created" });
+  return records[0];
+}
+
+async function getMemberRecord(roomId, userId) {
+  const records = await pb.collection("members").getFullList({
+    filter: `room_id = "${esc(roomId)}" && user_id = "${esc(userId)}"`,
+  });
+  return records[0];
+}
+
+async function upsertMember(roomId, userId, displayName, role) {
+  const existing = await pb.collection("members").getFullList({
+    filter: `room_id = "${esc(roomId)}" && user_id = "${esc(userId)}"`,
+  });
+  if (existing.length > 0) {
+    await pb.collection("members").update(existing[0].id, {
+      role,
+      display_name: displayName,
+    });
+    return existing[0];
+  }
+
+  return pb.collection("members").create({
+    room_id: roomId,
+    user_id: userId,
+    display_name: displayName,
+    role,
+    banned: false,
+  });
+}
+
+// ---------------- ROOMS LIST ----------------
+async function loadRoomsList() {
+  if (!roomListEl) return;
+  try {
+    const rooms = await pb.collection("rooms").getFullList({ sort: "created" });
+    roomListEl.innerHTML = "";
+
+    rooms.forEach((room) => {
+      const li = document.createElement("li");
+      li.className = "room-row";
+      li.textContent = room.name;
+      li.style.cursor = "pointer";
+      li.onclick = () => onRoomClick(room.name);
+      roomListEl.appendChild(li);
+    });
+  } catch (e) {
+    console.error("loadRoomsList error:", e);
+  }
+}
+
+function ensureRoomsSubscription() {
+  if (roomsSubActive) return;
+  roomsSubActive = true;
+  pb.collection("rooms").subscribe("*", () => {
+    loadRoomsList();
+  });
+}
+
+// ---------------- ROOM CLICK / JOIN FLOW ----------------
+async function onRoomClick(roomName) {
+  const user = currentUser();
+  if (!user) {
+    alert("Log in to open rooms.");
+    return;
+  }
+
+  try {
+    const roomData = await getRoomByName(roomName);
+    if (!roomData) {
+      alert("Room not found.");
+      return;
+    }
+
+    const memberData = await getMemberRecord(roomData.id, user.id);
+    if (memberData?.banned) {
+      alert("You are banned from this room.");
+      return;
+    }
+
+    if (isGuestUser(user)) {
+      if (memberData) {
+        await loadRoom(roomData.name);
+      } else {
+        const ok = confirm(`Request to join "${roomData.name}" as a guest?`);
+        if (!ok) return;
+
+        await pb.collection("join_requests").create({
+          room_id: roomData.id,
+          user_id: user.id,
+          display_name: "Guest",
+        });
+
+        alert("Join request sent. You'll auto-enter when approved.");
+
+        pb.collection("members").subscribe("*", async (e) => {
+          if (
+            e.record.room_id === roomData.id &&
+            e.record.user_id === user.id &&
+            !e.record.banned
+          ) {
+            await loadRoom(roomData.name);
+          }
+        });
+      }
+      return;
+    }
+
+    await loadRoom(roomData.name);
+  } catch (e) {
+    console.error("onRoomClick error:", e);
+    alert("Failed to open room.");
+  }
+}
+
+// ---------------- CREATE ROOM ----------------
+if (createRoomBtnHeader) {
+  createRoomBtnHeader.addEventListener("click", () => {
+    const user = currentUser();
+    if (!user || isGuestUser(user)) {
+      alert("Only logged-in members can create rooms.");
+      return;
+    }
+    modal.classList.remove("hidden");
+    roomNameInput.value = "";
+    roomRulesInput.value = "";
+  });
+}
+
+if (modalCancelBtn) {
+  modalCancelBtn.addEventListener("click", () => modal.classList.add("hidden"));
+}
+
+if (modalCreateBtn) {
+  modalCreateBtn.addEventListener("click", async () => {
+    const user = currentUser();
+    if (!user || isGuestUser(user)) {
+      alert("Only logged-in members can create rooms.");
+      return;
+    }
+
+    const name = roomNameInput.value.trim();
+    const rules = roomRulesInput.value.trim();
+    if (!name) {
+      alert("Room name required.");
+      return;
+    }
+
+    try {
+      const existing = await getRoomByName(name);
+      if (existing) {
+        alert("Room already exists.");
+        return;
+      }
+
+      const room = await pb.collection("rooms").create({
+        name,
+        rules: rules || "",
+        created_by: user.id,
+      });
+
+      await upsertMember(room.id, user.id, displayNameOf(user), "owner");
+      modal.classList.add("hidden");
+      await loadRoomsList();
+    } catch (e) {
+      console.error("create room failed:", e);
+      alert("Failed to create room.");
+    }
+  });
+}
+
+// ---------------- ADMIN PANEL ----------------
+async function renderJoinRequests(roomId) {
+  requestListEl.innerHTML = "";
+  const requests = await pb.collection("join_requests").getFullList({
+    filter: `room_id = "${esc(roomId)}"`,
+    sort: "created",
+  });
+
+  requests.forEach((reqRecord) => {
+    const li = document.createElement("li");
+    li.className = "request-item";
+
+    const nameDiv = document.createElement("div");
+    nameDiv.className = "request-name";
+    nameDiv.textContent = reqRecord.display_name || "Guest";
+
+    const actions = document.createElement("div");
+    actions.className = "request-actions";
+
+    const approve = document.createElement("button");
+    approve.className = "approve";
+    approve.textContent = "Approve";
+    approve.onclick = async () => {
+      await upsertMember(
+        roomId,
+        reqRecord.user_id,
+        reqRecord.display_name || "Guest",
+        "guest"
+      );
+      await pb.collection("join_requests").delete(reqRecord.id);
+    };
+
+    const reject = document.createElement("button");
+    reject.className = "reject";
+    reject.textContent = "Reject";
+    reject.onclick = async () => {
+      await pb.collection("join_requests").delete(reqRecord.id);
+    };
+
+    actions.appendChild(approve);
+    actions.appendChild(reject);
+    li.appendChild(nameDiv);
+    li.appendChild(actions);
+    requestListEl.appendChild(li);
+  });
+}
+
+async function renderMembers(roomId) {
+  memberListEl.innerHTML = "";
+  const members = await pb.collection("members").getFullList({
+    filter: `room_id = "${esc(roomId)}"`,
+    sort: "created",
+  });
+
+  const me = currentUser();
+
+  members.forEach((m) => {
+    const uid = m.user_id;
+    const li = document.createElement("li");
+    li.className = "member-item";
+
+    const left = document.createElement("div");
+    left.className = "member-name";
+    left.textContent = m.display_name || "Member";
+
+    const roleSpan = document.createElement("span");
+    roleSpan.className = "member-role";
+    roleSpan.textContent = m.role;
+    left.appendChild(roleSpan);
+
+    const right = document.createElement("div");
+    right.className = "member-actions";
+
+    const isSelf = me && uid === me.id;
+
+    if (!isSelf) {
+      if (currentRoomRole === "owner") {
+        const promote = document.createElement("button");
+        promote.className = "promote";
+        if (m.role === "moderator") {
+          promote.textContent = "Remove mod";
+          promote.onclick = async () => {
+            await pb.collection("members").update(m.id, { role: "member" });
+          };
+        } else {
+          promote.textContent = "Make mod";
+          promote.onclick = async () => {
+            await pb.collection("members").update(m.id, { role: "moderator" });
+          };
+        }
+        right.appendChild(promote);
+      }
+
+      const kick = document.createElement("button");
+      kick.className = "kick";
+      kick.textContent = "Kick";
+      kick.onclick = async () => {
+        await pb.collection("members").delete(m.id);
+      };
+      right.appendChild(kick);
+
+      const ban = document.createElement("button");
+      ban.className = "ban";
+      ban.textContent = "Ban";
+      ban.onclick = async () => {
+        await pb.collection("members").update(m.id, { banned: true });
+      };
+      right.appendChild(ban);
+    }
+
+    li.appendChild(left);
+    li.appendChild(right);
+    memberListEl.appendChild(li);
+  });
+}
+
+function setupAdminPanel(roomId, roomName) {
+  const user = currentUser();
+  if (
+    !user ||
+    !currentRoomRole ||
+    (currentRoomRole !== "owner" && currentRoomRole !== "moderator")
+  ) {
+    adminPanel.classList.remove("open");
+    memberListEl.innerHTML = "";
+    requestListEl.innerHTML = "";
+    return;
+  }
+
+  adminRoomTitle.textContent = `Settings – ${roomName}`;
+  adminInfoEl.textContent = `You are ${currentRoomRole.toUpperCase()} of this room.`;
+
+  renderJoinRequests(roomId);
+  renderMembers(roomId);
+
+  pb.collection("join_requests").subscribe("*", (e) => {
+    if (e.record.room_id === roomId) renderJoinRequests(roomId);
+  });
+
+  pb.collection("members").subscribe("*", (e) => {
+    if (e.record.room_id === roomId) renderMembers(roomId);
+  });
+
+  deleteRoomBtn.style.display = currentRoomRole === "owner" ? "block" : "none";
+  deleteRoomBtn.onclick = async () => {
+    const sure = confirm(`Delete room "${roomName}" and all its messages?`);
+    if (!sure) return;
+
+    try {
+      const msgs = await pb.collection("messages").getFullList({
+        filter: `room_id = "${esc(roomId)}"`,
+      });
+      await Promise.all(msgs.map((m) => pb.collection("messages").delete(m.id)));
+
+      const mems = await pb.collection("members").getFullList({
+        filter: `room_id = "${esc(roomId)}"`,
+      });
+      await Promise.all(mems.map((m) => pb.collection("members").delete(m.id)));
+
+      const reqs = await pb.collection("join_requests").getFullList({
+        filter: `room_id = "${esc(roomId)}"`,
+      });
+      await Promise.all(reqs.map((r) => pb.collection("join_requests").delete(r.id)));
+
+      const tps = await pb.collection("typing").getFullList({
+        filter: `room_id = "${esc(roomId)}"`,
+      });
+      await Promise.all(tps.map((t) => pb.collection("typing").delete(t.id)));
+
+      await pb.collection("rooms").delete(roomId);
+
+      clearSubs();
+      currentRoom = null;
+      currentRoomName = null;
+      chatHeaderEl.textContent = "Select a room";
+      msgDiv.innerHTML = "";
+      roomRulesEl.textContent = "";
+      roomRulesEl.classList.add("hidden");
+    } catch (e) {
+      console.error("delete room failed:", e);
+      alert("Failed to delete room.");
+    }
+  };
+}
+
+if (settingsBtn) {
+  settingsBtn.addEventListener("click", async () => {
+    if (!currentRoom) return alert("Select a room first.");
+    const user = currentUser();
+    if (!user) return alert("Login first.");
+    if (currentRoomRole !== "owner" && currentRoomRole !== "moderator") {
+      return alert("Only owners/moderators can open room settings.");
+    }
+
+    setupAdminPanel(currentRoom, currentRoomName || "Room");
+    adminPanel.classList.add("open");
+  });
+}
+
+// ---------------- LOAD ROOM ----------------
+async function loadRoom(roomName) {
+  clearSubs();
+
+  const roomData = await getRoomByName(roomName);
+  if (!roomData) {
+    alert("Room not found.");
+    return;
+  }
+
+  currentRoom = roomData.id;
+  currentRoomName = roomData.name;
+  currentDM = null;
+  chatHeaderEl.textContent = roomData.name;
+  msgDiv.innerHTML = "";
+
+  renderRules(roomData.rules || "");
+
+  const user = currentUser();
+  currentRoomRole = null;
+
+  if (user) {
+    const memberData = await getMemberRecord(roomData.id, user.id);
+
+    let roleToSet;
+    if (memberData) {
+      if (roomData.created_by && user.id === roomData.created_by) {
+        roleToSet = "owner";
+      } else if (memberData.role) {
+        roleToSet = memberData.role;
+      } else {
+        roleToSet = roomData.created_by === user.id ? "owner" : "member";
+      }
+    } else {
+      roleToSet = roomData.created_by === user.id ? "owner" : "member";
+    }
+
+    currentRoomRole = roleToSet;
+    await upsertMember(roomData.id, user.id, displayNameOf(user), roleToSet);
+  }
+
+  await reloadAndRenderMessages();
+
+  pb.collection("messages").subscribe("*", (e) => {
+    if (e.record.room_id === currentRoom) {
+      reloadAndRenderMessages();
+    }
+  });
+
+  pb.collection("typing").subscribe("*", (e) => {
+    if (e.record.room_id === currentRoom) {
+      updateTypingIndicator();
+    }
+  });
+
+  updateTypingIndicator();
+}
+
+async function reloadAndRenderMessages() {
+  if (!currentRoom) return;
+  const records = await pb.collection("messages").getFullList({
+    filter: `room_id = "${esc(currentRoom)}"`,
+    sort: "created",
+  });
+  renderRoomMessages(records);
+}
+
+function renderRoomMessages(records) {
+  msgDiv.innerHTML = "";
+  const me = currentUser();
+
+  records.forEach((data) => {
+    const msg = document.createElement("div");
+    msg.className = "message";
+
+    const isSelf = me && data.user_id === me.id;
+    if (isSelf) msg.classList.add("right");
+
+    if (data.deleted) {
+      const tomb = document.createElement("div");
+      tomb.className = "deleted-label";
+      tomb.textContent =
+        data.deleted_by_role === "admin"
+          ? "This message was deleted by an admin."
+          : "This message was deleted.";
+      msg.appendChild(tomb);
+      msgDiv.appendChild(msg);
+      return;
+    }
+
+    const header = document.createElement("div");
+    header.className = "message-header";
+
+    const avatar = document.createElement("img");
+    avatar.className = "msg-photo";
+    avatar.src = data.user_photo || "assets/default.png";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "msg-name";
+    nameSpan.textContent = data.user_name || "Guest";
+
+    const timeSpan = document.createElement("span");
+    timeSpan.className = "msg-time";
+    timeSpan.textContent = formatCreated(data);
+
+    header.appendChild(avatar);
+    header.appendChild(nameSpan);
+    header.appendChild(timeSpan);
+
+    const textDiv = document.createElement("div");
+    textDiv.className = "text";
+    textDiv.textContent = `${data.text || ""}${data.edited ? " (edited)" : ""}`;
+
+    msg.appendChild(header);
+    msg.appendChild(textDiv);
+
+    if (Array.isArray(data.image) && data.image.length > 0) {
+      data.image.forEach((imgName) => {
+        const img = document.createElement("img");
+        img.className = "msg-image";
+        img.src = pb.files.getUrl(data, imgName);
+        msg.appendChild(img);
+      });
+    }
+
+    if (data.video) {
+      const video = document.createElement("video");
+      video.src = pb.files.getUrl(data, data.video);
+      video.controls = true;
+      video.className = "msg-video";
+      video.style.maxWidth = "280px";
+      video.style.borderRadius = "10px";
+      video.style.marginTop = "6px";
+      msg.appendChild(video);
+    }
+
+    if (nameSpan && data.user_id && me && !isGuestUser(me) && data.user_id !== me.id) {
+      nameSpan.onclick = () => openDirectMessage(data.user_id, data.user_name || "User");
+    }
+
+    const canEdit = isSelf;
+    const senderRole = data.role || "member";
+    let canDelete = false;
+
+    if (isSelf) {
+      canDelete = true;
+    } else if (currentRoomRole === "owner") {
+      canDelete = true;
+    } else if (currentRoomRole === "moderator") {
+      if (senderRole === "member" || senderRole === "guest") {
+        canDelete = true;
+      }
+    }
+
+    if (canEdit) {
+      const editBtn = document.createElement("button");
+      editBtn.className = "edit-btn";
+      editBtn.textContent = "Edit";
+      editBtn.onclick = () => inlineEditMessageRoom(data.id, textDiv, data.text || "");
+      msg.appendChild(editBtn);
+    }
+
+    if (canDelete) {
+      const del = document.createElement("button");
+      del.className = "delete-btn";
+      del.textContent = "Delete";
+      del.onclick = () => softDeleteRoomMessage(data.id, !isSelf);
+      msg.appendChild(del);
+    }
+
+    buildReactionsUI("room", data.id, data, msg);
+    msgDiv.appendChild(msg);
+  });
+
+  msgDiv.scrollTop = msgDiv.scrollHeight;
+}
+
 // ---------------- INLINE EDIT & DELETE (ROOM) ----------------
-async function inlineEditMessageRoom(roomId, msgId, textDiv, oldText) {
+async function inlineEditMessageRoom(msgId, textDiv, oldText) {
   const existing = textDiv.querySelector("textarea");
   if (existing) return;
 
@@ -819,8 +860,7 @@ async function inlineEditMessageRoom(roomId, msgId, textDiv, oldText) {
       textDiv.textContent = original;
       return;
     }
-    const msgRef = doc(db, "rooms", roomId, "messages", msgId);
-    await updateDoc(msgRef, { text: newText, edited: true });
+    await pb.collection("messages").update(msgId, { text: newText, edited: true });
   };
 
   const cancelBtn = document.createElement("button");
@@ -836,28 +876,22 @@ async function inlineEditMessageRoom(roomId, msgId, textDiv, oldText) {
   textDiv.appendChild(actions);
 }
 
-async function softDeleteRoomMessage(roomId, msgId, byAdmin) {
-  const msgRef = doc(db, "rooms", roomId, "messages", msgId);
-  await updateDoc(msgRef, {
+async function softDeleteRoomMessage(msgId, byAdmin) {
+  await pb.collection("messages").update(msgId, {
     deleted: true,
-    deletedByRole: byAdmin ? "admin" : null,
+    deleted_by_role: byAdmin ? "admin" : "",
     text: "",
-    image: null,
     reactions: {},
   });
 }
 
 // ---------------- DIRECT MESSAGES ----------------
-function getDMChatId(uid1, uid2) {
-  return uid1 < uid2 ? `${uid1}__${uid2}` : `${uid2}__${uid1}`;
-}
-
 function registerDM(otherUid, otherName) {
-  if (!auth.currentUser || !dmListEl) return;
-  const myId = auth.currentUser.uid;
-  const chatId = getDMChatId(myId, otherUid);
+  const user = currentUser();
+  if (!user || !dmListEl) return;
+  const chatId = getDMChatId(user.id, otherUid);
 
-  let existing = dmListEl.querySelector(`[data-chatid="${chatId}"]`);
+  const existing = dmListEl.querySelector(`[data-chatid="${chatId}"]`);
   if (existing) return;
 
   const li = document.createElement("li");
@@ -870,106 +904,130 @@ function registerDM(otherUid, otherName) {
 }
 
 async function openDirectMessage(otherUid, otherName) {
-  const user = auth.currentUser;
-  if (!user || user.isAnonymous) {
+  const user = currentUser();
+  if (!user || isGuestUser(user)) {
     alert("Please login with Google to use private messages.");
     return;
   }
 
   clearSubs();
 
-  const chatId = getDMChatId(user.uid, otherUid);
+  const chatId = getDMChatId(user.id, otherUid);
   registerDM(otherUid, otherName);
 
   currentRoom = null;
+  currentRoomName = null;
   currentDM = chatId;
   chatHeaderEl.textContent = `DM with ${otherName}`;
   roomRulesEl.classList.add("hidden");
   msgDiv.innerHTML = "";
 
-  const msgRef = collection(db, "dm", chatId, "messages");
-  const q = query(msgRef, orderBy("timestamp"));
+  await reloadAndRenderDM();
 
-  unsubscribeMessages = onSnapshot(q, (snapshot) => {
-    msgDiv.innerHTML = "";
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      const msg = document.createElement("div");
-      msg.className = "message";
-
-      const isSelf = auth.currentUser && data.uid === auth.currentUser.uid;
-      if (isSelf) msg.classList.add("right");
-
-      if (data.deleted) {
-        const tomb = document.createElement("div");
-        tomb.className = "deleted-label";
-        tomb.textContent = "This message was deleted.";
-        msg.appendChild(tomb);
-        msgDiv.appendChild(msg);
-        return;
-      }
-
-      const timeString = data.timestamp
-        ? new Date(data.timestamp.toDate()).toLocaleTimeString()
-        : "";
-      const editedLabel = data.edited ? " (edited)" : "";
-
-      const header = document.createElement("div");
-      header.className = "message-header";
-
-      const avatar = document.createElement("img");
-      avatar.className = "msg-photo";
-      avatar.src = data.photo || "assets/default.png";
-
-      const nameSpan = document.createElement("span");
-      nameSpan.className = "msg-name";
-      nameSpan.textContent = data.user;
-
-      const timeSpan = document.createElement("span");
-      timeSpan.className = "msg-time";
-      timeSpan.textContent = timeString;
-
-      header.appendChild(avatar);
-      header.appendChild(nameSpan);
-      header.appendChild(timeSpan);
-
-      const textDiv = document.createElement("div");
-      textDiv.className = "text";
-      textDiv.textContent = (data.text || "") + editedLabel;
-
-      msg.appendChild(header);
-      msg.appendChild(textDiv);
-
-      if (data.image) {
-        const img = document.createElement("img");
-        img.className = "msg-image";
-        img.src = data.image;
-        msg.appendChild(img);
-      }
-
-      if (isSelf) {
-        const editBtn = document.createElement("button");
-        editBtn.className = "edit-btn";
-        editBtn.textContent = "Edit";
-        editBtn.onclick = () =>
-          inlineEditDMMessage(chatId, docSnap.id, textDiv, data.text || "");
-        msg.appendChild(editBtn);
-
-        const delBtn = document.createElement("button");
-        delBtn.className = "delete-btn";
-        delBtn.textContent = "Delete";
-        delBtn.onclick = () => softDeleteDMMessage(chatId, docSnap.id);
-        msg.appendChild(delBtn);
-      }
-
-      buildReactionsUI("dm", chatId, docSnap.id, data, msg);
-      msgDiv.appendChild(msg);
-    });
-    msgDiv.scrollTop = msgDiv.scrollHeight;
+  pb.collection("dm_messages").subscribe("*", (e) => {
+    if (e.record.chat_id === currentDM) {
+      reloadAndRenderDM();
+    }
   });
 }
 
-async function inlineEditDMMessage(chatId, msgId, textDiv, oldText) {
+async function reloadAndRenderDM() {
+  if (!currentDM) return;
+  const records = await pb.collection("dm_messages").getFullList({
+    filter: `chat_id = "${esc(currentDM)}"`,
+    sort: "created",
+  });
+  renderDM(records);
+}
+
+function renderDM(records) {
+  msgDiv.innerHTML = "";
+  const me = currentUser();
+
+  records.forEach((data) => {
+    const msg = document.createElement("div");
+    msg.className = "message";
+
+    const isSelf = me && data.user_id === me.id;
+    if (isSelf) msg.classList.add("right");
+
+    if (data.deleted) {
+      const tomb = document.createElement("div");
+      tomb.className = "deleted-label";
+      tomb.textContent = "This message was deleted.";
+      msg.appendChild(tomb);
+      msgDiv.appendChild(msg);
+      return;
+    }
+
+    const header = document.createElement("div");
+    header.className = "message-header";
+
+    const avatar = document.createElement("img");
+    avatar.className = "msg-photo";
+    avatar.src = data.user_photo || "assets/default.png";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "msg-name";
+    nameSpan.textContent = data.user_name || "Guest";
+
+    const timeSpan = document.createElement("span");
+    timeSpan.className = "msg-time";
+    timeSpan.textContent = formatCreated(data);
+
+    header.appendChild(avatar);
+    header.appendChild(nameSpan);
+    header.appendChild(timeSpan);
+
+    const textDiv = document.createElement("div");
+    textDiv.className = "text";
+    textDiv.textContent = `${data.text || ""}${data.edited ? " (edited)" : ""}`;
+
+    msg.appendChild(header);
+    msg.appendChild(textDiv);
+
+    if (Array.isArray(data.image) && data.image.length > 0) {
+      data.image.forEach((imgName) => {
+        const img = document.createElement("img");
+        img.className = "msg-image";
+        img.src = pb.files.getUrl(data, imgName);
+        msg.appendChild(img);
+      });
+    }
+
+    if (data.video) {
+      const video = document.createElement("video");
+      video.src = pb.files.getUrl(data, data.video);
+      video.controls = true;
+      video.className = "msg-video";
+      video.style.maxWidth = "280px";
+      video.style.borderRadius = "10px";
+      video.style.marginTop = "6px";
+      msg.appendChild(video);
+    }
+
+    if (isSelf) {
+      const editBtn = document.createElement("button");
+      editBtn.className = "edit-btn";
+      editBtn.textContent = "Edit";
+      editBtn.onclick = () => inlineEditDMMessage(data.id, textDiv, data.text || "");
+      msg.appendChild(editBtn);
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "delete-btn";
+      delBtn.textContent = "Delete";
+      delBtn.onclick = () => softDeleteDMMessage(data.id);
+      msg.appendChild(delBtn);
+    }
+
+    buildReactionsUI("dm", data.id, data, msg);
+    msgDiv.appendChild(msg);
+  });
+
+  msgDiv.scrollTop = msgDiv.scrollHeight;
+}
+
+async function inlineEditDMMessage(msgId, textDiv, oldText) {
   const existing = textDiv.querySelector("textarea");
   if (existing) return;
 
@@ -1001,8 +1059,10 @@ async function inlineEditDMMessage(chatId, msgId, textDiv, oldText) {
       textDiv.textContent = original;
       return;
     }
-    const msgRef = doc(db, "dm", chatId, "messages", msgId);
-    await updateDoc(msgRef, { text: newText, edited: true });
+    await pb.collection("dm_messages").update(msgId, {
+      text: newText,
+      edited: true,
+    });
   };
 
   const cancelBtn = document.createElement("button");
@@ -1018,12 +1078,10 @@ async function inlineEditDMMessage(chatId, msgId, textDiv, oldText) {
   textDiv.appendChild(actions);
 }
 
-async function softDeleteDMMessage(chatId, msgId) {
-  const msgRef = doc(db, "dm", chatId, "messages", msgId);
-  await updateDoc(msgRef, {
+async function softDeleteDMMessage(msgId) {
+  await pb.collection("dm_messages").update(msgId, {
     deleted: true,
     text: "",
-    image: null,
     reactions: {},
   });
 }
@@ -1031,58 +1089,66 @@ async function softDeleteDMMessage(chatId, msgId) {
 // ---------------- SEND MESSAGE + UPLOAD ----------------
 if (sendBtn) {
   sendBtn.onclick = async () => {
-    
-    const file = imageInput.files[0];
-
+    const imgFile = imageInput?.files?.[0] || null;
+    const vidFile = videoInput?.files?.[0] || null;
     const text = messageInput.value.trim();
 
     if (!currentRoom && !currentDM) {
       alert("Select a room or DM first.");
       return;
     }
-    if (!auth.currentUser) return;
-    if (!text && !file) return;
-    
-    let imageURL = null;
 
-    if (file) {
-      try {
-        const sRef = storageRef(
-          storage,
-          `images/${Date.now()}-${auth.currentUser.uid}-${file.name}`
-        );
-        await uploadBytes(sRef, file);
-        imageURL = await getDownloadURL(sRef);
-      } catch (e) {
-        console.error("upload failed:", e);
-        alert("Image upload failed.");
-        return;
+    const user = currentUser();
+    if (!user) return;
+    if (!text && !imgFile && !vidFile) return;
+
+    try {
+      if (currentRoom) {
+        const formData = new FormData();
+        formData.append("room_id", currentRoom);
+        formData.append("text", text);
+        formData.append("user_name", displayNameOf(user));
+        formData.append("user_id", user.id);
+        formData.append("user_photo", user.avatarUrl || "");
+        formData.append("role", currentRoomRole || "member");
+        formData.append("deleted", "false");
+        formData.append("edited", "false");
+        formData.append("reactions", "{}");
+
+        if (imgFile) formData.append("image", imgFile);
+        if (vidFile) formData.append("video", vidFile);
+
+        await pb.collection("messages").create(formData);
+      } else if (currentDM) {
+        const formData = new FormData();
+        formData.append("chat_id", currentDM);
+        formData.append("text", text);
+        formData.append("user_name", displayNameOf(user));
+        formData.append("user_id", user.id);
+        formData.append("user_photo", user.avatarUrl || "");
+        formData.append("deleted", "false");
+        formData.append("edited", "false");
+        formData.append("reactions", "{}");
+
+        if (imgFile) formData.append("image", imgFile);
+        if (vidFile) formData.append("video", vidFile);
+
+        await pb.collection("dm_messages").create(formData);
       }
-    }
 
-    const payload = {
-      text,
-      user: auth.currentUser.displayName || "Guest",
-      uid: auth.currentUser.uid,
-      role: currentRoomRole,
-      photo: auth.currentUser.photoURL || "assets/default.png",
-      image: imageURL,
-      timestamp: serverTimestamp(),
-    };
-
-    if (currentRoom) {
-      await addDoc(collection(db, "rooms", currentRoom, "messages"), payload);
-    } else if (currentDM) {
-      await addDoc(collection(db, "dm", currentDM, "messages"), payload);
+      attachmentPreview.innerHTML = "";
+      attachmentPreview.classList.add("hidden");
+      messageInput.value = "";
+      if (imageInput) imageInput.value = "";
+      if (videoInput) videoInput.value = "";
+    } catch (e) {
+      console.error("send failed:", e);
+      alert("Failed to send message.");
     }
-    attachmentPreview.innerHTML = "";
-    attachmentPreview.classList.add("hidden");
-    messageInput.value = "";
-    imageInput.value = "";
   };
 }
 
-
+// ---------------- TYPING ----------------
 if (messageInput) {
   messageInput.addEventListener("input", () => {
     if (currentRoom) markTyping();
@@ -1090,23 +1156,29 @@ if (messageInput) {
   messageInput.addEventListener("blur", stopTyping);
 }
 
-
-
-// ---------------- TYPING ----------------
 async function markTyping() {
-  if (!currentRoom || !auth.currentUser) return;
+  if (!currentRoom) return;
+  const user = currentUser();
+  if (!user) return;
+
   try {
-    await setDoc(
-      doc(db, "rooms", currentRoom, "typing", auth.currentUser.uid),
-      {
-        uid: auth.currentUser.uid,
-        name: auth.currentUser.displayName || "Guest",
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
+    const existing = await pb.collection("typing").getFullList({
+      filter: `room_id = "${esc(currentRoom)}" && user_id = "${esc(user.id)}"`,
+    });
+
+    if (existing.length > 0) {
+      await pb.collection("typing").update(existing[0].id, {
+        user_name: displayNameOf(user),
+      });
+    } else {
+      await pb.collection("typing").create({
+        room_id: currentRoom,
+        user_id: user.id,
+        user_name: displayNameOf(user),
+      });
+    }
   } catch (e) {
-    console.warn("Typing set error:", e);
+    console.warn("typing set error:", e);
   }
 
   if (typingTimeout) clearTimeout(typingTimeout);
@@ -1115,111 +1187,157 @@ async function markTyping() {
 
 async function stopTyping() {
   typingTimeout = null;
-  if (!currentRoom || !auth.currentUser) return;
+  if (!currentRoom) return;
+  const user = currentUser();
+  if (!user) return;
+
   try {
-    await deleteDoc(
-      doc(db, "rooms", currentRoom, "typing", auth.currentUser.uid)
-    );
-  } catch (e) {
+    const existing = await pb.collection("typing").getFullList({
+      filter: `room_id = "${esc(currentRoom)}" && user_id = "${esc(user.id)}"`,
+    });
+    if (existing.length > 0) {
+      await pb.collection("typing").delete(existing[0].id);
+    }
+  } catch (_) {
     // ignore
   }
 }
 
-// ---------------- AUTH STATE ----------------
-onAuthStateChanged(auth, async (user) => {
-  if (user) {
-    loginScreen.style.display = "none";
-    appScreen.style.display = "flex";
-    userNameEl.textContent = user.displayName || "Guest";
-    userPhotoEl.src = user.photoURL || "assets/default.png";
-    userStatusEl.textContent = user.isAnonymous ? "Guest" : "Online";
-    setupPresence(user);
-
-    const disclaimerModal = document.getElementById("disclaimerModal");
-    const agreeBtn = document.getElementById("agreeBtn");
-    const disagreeBtn = document.getElementById("disagreeBtn");
-    
-    // Only show once per device
-    if (!localStorage.getItem("acceptedDisclaimer")) {
-        disclaimerModal.classList.remove("hidden");
-    }
-    
-    if (agreeBtn) {
-        agreeBtn.onclick = () => {
-            localStorage.setItem("acceptedDisclaimer", "true");
-            disclaimerModal.classList.add("hidden");
-        };
-    }
-    
-    if (disagreeBtn) {
-        disagreeBtn.onclick = async () => {
-            alert("You must accept the agreement to use YoungWave.");
-            localStorage.removeItem("acceptedDisclaimer");
-            await signOut(auth);
-        };
-    }
-  }
-  
-  else {
-    clearSubs();
-    currentRoom = null;
-    currentDM = null;
-    chatHeaderEl.textContent = "Select a room";
-    msgDiv.innerHTML = "";
-    roomRulesEl.textContent = "";
-    roomRulesEl.classList.add("hidden");
-    appScreen.style.display = "none";
-    loginScreen.style.display = "flex";
-    userStatusEl.textContent = "Offline";
-  }
-});
-
-// ---------------- LOGOUT + CLEANUP ----------------
-async function cleanupGuest(user) {
-  try {
-    await deleteDoc(doc(db, "users", user.uid));
-  } catch (e) {
-    console.warn("Guest cleanup failed:", e);
-  }
-}
-
-if (logoutBtn) {
-  logoutBtn.onclick = async () => {
-    const user = auth.currentUser;
-    if (user && user.isAnonymous) {
-      await cleanupGuest(user);
-    }
-    await signOut(auth);
-  };
-}
-
-const attachmentPreview = document.getElementById("attachmentPreview");
-
-imageInput.addEventListener("change", () => {
-  const file = imageInput.files[0];
-  if (!file) {
-    attachmentPreview.classList.add("hidden");
-    attachmentPreview.innerHTML = "";
+async function updateTypingIndicator() {
+  if (!currentRoom) {
+    typingIndicatorEl.textContent = "";
     return;
   }
 
-  // Show filename
-  attachmentPreview.classList.remove("hidden");
-  attachmentPreview.innerHTML = `<div>📎 Attached: ${file.name}</div>`;
+  const user = currentUser();
+  const records = await pb.collection("typing").getFullList({
+    filter: `room_id = "${esc(currentRoom)}"`,
+  });
 
-  // Show image preview if image
-  if (file.type.startsWith("image/")) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      attachmentPreview.innerHTML += `<img src="${e.target.result}" />`;
-    };
-    reader.readAsDataURL(file);
+  const typingUsers = records
+    .filter((r) => !user || r.user_id !== user.id)
+    .map((r) => r.user_name || "Someone");
+
+  if (typingUsers.length === 0) {
+    typingIndicatorEl.textContent = "";
+  } else if (typingUsers.length === 1) {
+    typingIndicatorEl.textContent = `${typingUsers[0]} is typing...`;
+  } else {
+    typingIndicatorEl.textContent = `${typingUsers[0]} and ${typingUsers.length - 1} others are typing...`;
   }
-});
+}
 
+// ---------------- ATTACHMENT PREVIEW ----------------
+if (imageInput) {
+  imageInput.addEventListener("change", () => {
+    const file = imageInput.files[0];
+    if (!file) {
+      attachmentPreview.classList.add("hidden");
+      attachmentPreview.innerHTML = "";
+      return;
+    }
+
+    attachmentPreview.classList.remove("hidden");
+    attachmentPreview.innerHTML = `<div>📎 Attached: ${file.name}</div>`;
+
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        attachmentPreview.innerHTML += `<img src="${e.target.result}" />`;
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+}
+
+if (videoInput) {
+  videoInput.addEventListener("change", () => {
+    const file = videoInput.files[0];
+    if (!file) return;
+    attachmentPreview.classList.remove("hidden");
+    const previous = attachmentPreview.innerHTML || "";
+    attachmentPreview.innerHTML = `${previous}<div>🎥 Attached: ${file.name}</div>`;
+  });
+}
 
 attachmentPreview.classList.add("hidden");
 attachmentPreview.innerHTML = "";
 
+// ---------------- LOGOUT ----------------
+if (logoutBtn) {
+  logoutBtn.onclick = async () => {
+    const user = currentUser();
 
+    try {
+      if (user && isGuestUser(user)) {
+        await pb.collection("users").delete(user.id);
+      }
+    } catch (e) {
+      console.warn("Guest cleanup failed:", e);
+    }
 
+    pb.authStore.clear();
+    guestEmail = null;
+    guestPassword = null;
+  };
+}
+
+// ---------------- AUTH STORE WATCH ----------------
+pb.authStore.onChange(
+  async (_token, model) => {
+    if (model) {
+      loginScreen.style.display = "none";
+      appScreen.style.display = "flex";
+
+      userNameEl.textContent = displayNameOf(model);
+      userPhotoEl.src = photoOf(model);
+      userStatusEl.textContent = "Online";
+
+      await loadRoomsList();
+      ensureRoomsSubscription();
+
+      const disclaimerModal = document.getElementById("disclaimerModal");
+      const agreeBtn = document.getElementById("agreeBtn");
+      const disagreeBtn = document.getElementById("disagreeBtn");
+
+      if (!localStorage.getItem("acceptedDisclaimer")) {
+        disclaimerModal.classList.remove("hidden");
+      }
+
+      if (agreeBtn) {
+        agreeBtn.onclick = () => {
+          localStorage.setItem("acceptedDisclaimer", "true");
+          disclaimerModal.classList.add("hidden");
+        };
+      }
+
+      if (disagreeBtn) {
+        disagreeBtn.onclick = async () => {
+          alert("You must accept the agreement to use YoungWave.");
+          localStorage.removeItem("acceptedDisclaimer");
+
+          const user = currentUser();
+          try {
+            if (user && isGuestUser(user)) await pb.collection("users").delete(user.id);
+          } catch (_) {
+            // ignore
+          }
+          pb.authStore.clear();
+        };
+      }
+    } else {
+      clearSubs();
+      currentRoom = null;
+      currentRoomName = null;
+      currentDM = null;
+      chatHeaderEl.textContent = "Select a room";
+      msgDiv.innerHTML = "";
+      roomRulesEl.textContent = "";
+      roomRulesEl.classList.add("hidden");
+      appScreen.style.display = "none";
+      loginScreen.style.display = "flex";
+      userStatusEl.textContent = "Offline";
+    }
+  },
+  true
+);

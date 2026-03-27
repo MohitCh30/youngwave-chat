@@ -68,6 +68,14 @@ The frontend is a static site deployed globally via Cloudflare Pages. The backen
 
 ---
 
+## Infrastructure
+
+- **systemd** — PocketBase and Cloudflare Tunnel run as system services, 
+  auto-restarting on crash and starting on boot
+- **Auto-updates** — weekly cron job checks and applies PocketBase releases
+- **Monitoring** — UptimeKuma tracks backend availability with Telegram alerts
+
+
 ## Running Locally
 
 **Requirements:** PocketBase binary (download from [pocketbase.io](https://pocketbase.io))

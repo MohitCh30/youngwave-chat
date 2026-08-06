@@ -64,6 +64,21 @@ body {
   max-width: 320px;
 }
 
+.login-footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.login-footer a,
+.policy-links a,
+.doc-page a {
+  color: #c99cff;
+}
+
 .btn {
   padding: 10px 16px;
   border-radius: 999px;
@@ -794,6 +809,12 @@ body {
   margin-bottom: 20px;
 }
 
+.policy-links {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 10px 0 0;
+}
+
 .disclaimer-actions {
   display: flex;
   justify-content: flex-end;
@@ -839,6 +860,38 @@ body {
 
 .rules-box li:last-child {
   margin-bottom: 0;
+}
+
+.doc-page {
+  width: min(760px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 40px 0 56px;
+  color: var(--text);
+}
+
+.doc-page h1 {
+  margin: 18px 0 8px;
+  font-size: 32px;
+}
+
+.doc-page h2 {
+  margin: 24px 0 8px;
+  font-size: 18px;
+}
+
+.doc-page p,
+.doc-page li {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.doc-page ul {
+  padding-left: 20px;
+}
+
+.doc-back {
+  font-size: 13px;
 }
 
 /* ====== MOBILE IMPROVEMENTS ====== */

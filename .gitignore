@@ -26,3 +26,8 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+
+ .codex/
+.opencodeignore
+ CHANGELOG.md
+ LICENSE.md

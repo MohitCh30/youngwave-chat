@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YoungWave Privacy Policy</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="theme-dark">
+  <main class="doc-page">
+    <a class="doc-back" href="index.html">Back to YoungWave</a>
+    <h1>Privacy Policy</h1>
+    <p>Last updated: August 6, 2026</p>
+
+    <h2>What YoungWave Collects</h2>
+    <p>YoungWave collects and processes information needed to run the current chat application:</p>
+    <ul>
+      <li>Google OAuth profile information, including email, display name, username, profile picture, and authentication identifiers.</li>
+      <li>Guest account information, including a temporary YoungWave email address, generated password credential, display name, and account identifier.</li>
+      <li>Room messages, direct messages, message timestamps, edit/delete flags, sender identifiers, display names, profile photo URLs, and role snapshots.</li>
+      <li>Uploaded media, including images, videos, filenames, file metadata, and PocketBase file storage paths.</li>
+      <li>Reactions stored as reaction types and user identifiers.</li>
+      <li>Typing indicators stored as room ID, user ID, display name, and timestamps while the typing record exists.</li>
+      <li>Room memberships, join requests, roles, ban status, room names, room rules, and room creator identifiers.</li>
+      <li>Moderation information such as kicks, bans, deleted message markers, owner/moderator roles, and join-request decisions.</li>
+      <li>Operational request logs created by PocketBase, which may include request URLs, status, user agent, IP address, and error details.</li>
+    </ul>
+
+    <h2>Why This Data Is Collected</h2>
+    <p>The data is used to authenticate users, support guest access, show rooms and messages, deliver direct messages, display uploaded media, show reactions and typing indicators, manage room membership, and support owner/moderator controls.</p>
+
+    <h2>Authentication</h2>
+    <p>Google OAuth is used for Google sign-in. YoungWave receives basic profile information from Google through PocketBase OAuth. Guest sign-in creates a temporary account using a generated YoungWave email address and password credential.</p>
+
+    <h2>Storage</h2>
+    <p>Application data is stored in PocketBase with SQLite. Uploaded media is stored in PocketBase file storage. The browser also stores PocketBase authentication state and the local agreement flag used by the current application.</p>
+
+    <h2>Current Retention Behaviour</h2>
+    <p>Chat content, direct messages, room records, membership records, join requests, reactions, and uploaded media remain until deleted by a user, moderator, room owner, backend administrator, or related room deletion flow. Server request logs may be retained for up to 5 days under the current PocketBase configuration.</p>
+
+    <h2>Current Deletion Behaviour</h2>
+    <p>Guest accounts are deleted when the guest logs out through the current logout flow. Google account deletion is not currently implemented in the application UI. Message deletion is currently a soft-delete behavior that removes message text and reactions but may retain message metadata and uploaded media unless separately deleted. Room deletion removes room messages, members, join requests, typing records, and the room record through the current client flow.</p>
+
+    <h2>Third-Party Processors</h2>
+    <ul>
+      <li>Google OAuth processes authentication and profile data for Google sign-in.</li>
+      <li>PocketBase processes authentication, database records, realtime subscriptions, files, and request logs.</li>
+      <li>Cloudflare Pages hosts the static frontend, and Cloudflare Tunnel exposes the PocketBase backend endpoint described by the repository.</li>
+      <li>jsDelivr serves the PocketBase browser SDK imported by the frontend.</li>
+    </ul>
+
+    <h2>Security Overview</h2>
+    <p>The current implementation uses HTTPS endpoints, PocketBase authentication, PocketBase collection rules, and PocketBase request logging. Uploaded files and chat records are stored by PocketBase. Security behavior depends on the deployed PocketBase configuration and collection rules.</p>
+
+    <h2>Current Limitations</h2>
+    <ul>
+      <li>Account deletion for Google-authenticated users is not currently implemented in the application UI.</li>
+      <li>Data export, correction request, consent withdrawal, and grievance workflows are not currently implemented as dedicated application features.</li>
+      <li>Message deletion is not a complete erasure of all related metadata or files in the current implementation.</li>
+      <li>Privacy contact: mohitchaudhary3523@gmail.com</li>
+    </ul>
+  </main>
+</body>
+</html>

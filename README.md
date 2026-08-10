@@ -78,25 +78,27 @@ The frontend is a static site deployed globally via Cloudflare Pages. The backen
 
 ## Running Locally
 
-**Requirements:** PocketBase binary (download from [pocketbase.io](https://pocketbase.io))
+**Requirements:** PocketBase binary **v0.23 or later** (the `pb_data` schema was upgraded by v0.36.8 and cannot be opened by v0.22.x — download from [pocketbase.io](https://pocketbase.io))
 
 ```bash
 # Clone the repository
 git clone https://github.com/MohitCh30/youngwave-chat
 cd youngwave-chat
 
-# Start PocketBase
-cd pocketbase-server
-./pocketbase serve
+# Start PocketBase (repo-root binary, v0.36.8, serves on http://127.0.0.1:8090)
+# pb_migrations live next to pb_data inside pocketbase-server/ and are applied automatically on start
+./pocketbase serve --dir=pocketbase-server/pb_data
 
 # Serve the frontend (in a separate terminal)
-cd ../public
+cd public
 python3 -m http.server 3000 --bind 127.0.0.1
 ```
 
 Open `http://127.0.0.1:3000` in your browser.
 
 PocketBase Admin UI: `http://127.0.0.1:8090/_/`
+
+> **Note:** `pocketbase-server/pocketbase` is a legacy v0.22.4 binary kept for reference only — do NOT run it against `pocketbase-server/pb_data`. Production runs the v0.36.8 repo-root binary via `systemd` (`pocketbase.service`).
 
 ---
 
@@ -123,9 +125,11 @@ youngwave-chat/
 │   ├── main.js           # All application logic (~1350 lines)
 │   ├── style.css         # Theming and responsive layout
 │   └── assets/
-│       └── default.png   # Default user avatar
-└── pocketbase-server/
-    └── pocketbase        # PocketBase binary (not committed)
+│       └── default.png   # Default guest avatar
+└── pocketbase/     # Private self-hosted backend - not committed to GitHub
+    ├── pocketbase-server        #  Updated to the latest version (36.0.8) (Pocketbase recommends 23.0 v+ with appreopriate changes)
+    ├── pb_data/          # SQLite databases and JSVM types.d.ts (Don't commit the Database)
+    └── pb_migrations/    # Schema/API-rule migrations (v0.23+ JSVM API)
 ```
 
 ---

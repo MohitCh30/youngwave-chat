@@ -11,6 +11,9 @@ let roomsSubActive = false;
 let guestEmail = null;
 let guestPassword = null;
 
+const PRIVACY_POLICY_VERSION = "1.0";
+const TERMS_VERSION = "1.0";
+
 // ---------------- DOM ----------------
 const loginScreen = document.getElementById("login-screen");
 const appScreen = document.getElementById("app-screen");
@@ -80,6 +83,23 @@ function displayNameOf(user) {
 
 function photoOf(user) {
   return user?.avatarUrl || "assets/default.png";
+}
+
+function hasAcceptedCurrentPolicies(user) {
+  return (
+    user?.privacy_policy_version === PRIVACY_POLICY_VERSION &&
+    user?.terms_version === TERMS_VERSION &&
+    Boolean(user?.accepted_at)
+  );
+}
+
+async function acceptCurrentPolicies(user) {
+  const updated = await pb.collection("users").update(user.id, {
+    privacy_policy_version: PRIVACY_POLICY_VERSION,
+    terms_version: TERMS_VERSION,
+    accepted_at: new Date().toISOString(),
+  });
+  pb.authStore.save(pb.authStore.token, updated);
 }
 
 function getDMChatId(uid1, uid2) {
@@ -1308,21 +1328,26 @@ pb.authStore.onChange(
       const agreeBtn = document.getElementById("agreeBtn");
       const disagreeBtn = document.getElementById("disagreeBtn");
 
-      if (!localStorage.getItem("acceptedDisclaimer")) {
+      if (!hasAcceptedCurrentPolicies(model)) {
         disclaimerModal.classList.remove("hidden");
       }
 
       if (agreeBtn) {
-        agreeBtn.onclick = () => {
-          localStorage.setItem("acceptedDisclaimer", "true");
-          disclaimerModal.classList.add("hidden");
+        agreeBtn.onclick = async () => {
+          try {
+            await acceptCurrentPolicies(currentUser());
+            disclaimerModal.classList.add("hidden");
+            localStorage.removeItem("acceptedDisclaimer");
+          } catch (e) {
+            console.error("policy acceptance failed:", e);
+            alert("Failed to save agreement. Please try again.");
+          }
         };
       }
 
       if (disagreeBtn) {
         disagreeBtn.onclick = async () => {
           alert("You must accept the agreement to use YoungWave.");
-          localStorage.removeItem("acceptedDisclaimer");
 
           const user = currentUser();
           try {

@@ -113,8 +113,8 @@ function formatCreated(record) {
 
 function renderRules(rawRules) {
   const rules = rawRules || "";
+  roomRulesEl.textContent = "";
   if (!rules.trim()) {
-    roomRulesEl.innerHTML = "";
     roomRulesEl.classList.add("hidden");
     return;
   }
@@ -123,13 +123,16 @@ function renderRules(rawRules) {
     .map((r) => r.trim())
     .filter((r) => r.length > 0);
 
-  roomRulesEl.innerHTML = `
-    <div class="rules-box">
-      <ol>
-        ${parts.map((p) => `<li>${p}</li>`).join("")}
-      </ol>
-    </div>
-  `;
+  const box = document.createElement("div");
+  box.className = "rules-box";
+  const ol = document.createElement("ol");
+  parts.forEach((p) => {
+    const li = document.createElement("li");
+    li.textContent = p;
+    ol.appendChild(li);
+  });
+  box.appendChild(ol);
+  roomRulesEl.appendChild(box);
   roomRulesEl.classList.remove("hidden");
 }
 
@@ -888,7 +891,12 @@ async function inlineEditMessageRoom(msgId, textDiv, oldText) {
       textDiv.textContent = original;
       return;
     }
-    await pb.collection("messages").update(msgId, { text: newText, edited: true });
+    try {
+      await pb.collection("messages").update(msgId, { text: newText, edited: true });
+    } catch (e) {
+      console.error("edit failed:", e);
+      alert("You don't have permission to edit this message.");
+    }
   };
 
   const cancelBtn = document.createElement("button");
@@ -905,12 +913,16 @@ async function inlineEditMessageRoom(msgId, textDiv, oldText) {
 }
 
 async function softDeleteRoomMessage(msgId, byAdmin) {
-  await pb.collection("messages").update(msgId, {
-    deleted: true,
-    deleted_by_role: byAdmin ? "admin" : "",
-    text: "",
-    reactions: {},
-  });
+  // Server rules: authors may tombstone their own message (no deleted_by_role);
+  // only room owners/moderators may set deleted_by_role and tombstone others' messages.
+  const payload = { deleted: true, text: "", reactions: {} };
+  if (byAdmin) payload.deleted_by_role = "admin";
+  try {
+    await pb.collection("messages").update(msgId, payload);
+  } catch (e) {
+    console.error("delete failed:", e);
+    alert("You don't have permission to delete this message.");
+  }
 }
 
 // ---------------- DIRECT MESSAGES ----------------
@@ -1087,10 +1099,15 @@ async function inlineEditDMMessage(msgId, textDiv, oldText) {
       textDiv.textContent = original;
       return;
     }
-    await pb.collection("dm_messages").update(msgId, {
-      text: newText,
-      edited: true,
-    });
+    try {
+      await pb.collection("dm_messages").update(msgId, {
+        text: newText,
+        edited: true,
+      });
+    } catch (e) {
+      console.error("edit failed:", e);
+      alert("You don't have permission to edit this message.");
+    }
   };
 
   const cancelBtn = document.createElement("button");
@@ -1107,11 +1124,16 @@ async function inlineEditDMMessage(msgId, textDiv, oldText) {
 }
 
 async function softDeleteDMMessage(msgId) {
-  await pb.collection("dm_messages").update(msgId, {
-    deleted: true,
-    text: "",
-    reactions: {},
-  });
+  try {
+    await pb.collection("dm_messages").update(msgId, {
+      deleted: true,
+      text: "",
+      reactions: {},
+    });
+  } catch (e) {
+    console.error("delete failed:", e);
+    alert("You don't have permission to delete this message.");
+  }
 }
 
 // ---------------- SEND MESSAGE + UPLOAD ----------------
@@ -1256,22 +1278,31 @@ async function updateTypingIndicator() {
 }
 
 // ---------------- ATTACHMENT PREVIEW ----------------
+function showAttachmentLabel(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  attachmentPreview.appendChild(div);
+}
+
 if (imageInput) {
   imageInput.addEventListener("change", () => {
     const file = imageInput.files[0];
     if (!file) {
       attachmentPreview.classList.add("hidden");
-      attachmentPreview.innerHTML = "";
+      attachmentPreview.textContent = "";
       return;
     }
 
     attachmentPreview.classList.remove("hidden");
-    attachmentPreview.innerHTML = `<div>📎 Attached: ${file.name}</div>`;
+    attachmentPreview.textContent = "";
+    showAttachmentLabel(`📎 Attached: ${file.name}`);
 
     if (file.type.startsWith("image/")) {
       const reader = new FileReader();
       reader.onload = (e) => {
-        attachmentPreview.innerHTML += `<img src="${e.target.result}" />`;
+        const img = document.createElement("img");
+        img.src = e.target.result;
+        attachmentPreview.appendChild(img);
       };
       reader.readAsDataURL(file);
     }
@@ -1283,13 +1314,12 @@ if (videoInput) {
     const file = videoInput.files[0];
     if (!file) return;
     attachmentPreview.classList.remove("hidden");
-    const previous = attachmentPreview.innerHTML || "";
-    attachmentPreview.innerHTML = `${previous}<div>🎥 Attached: ${file.name}</div>`;
+    showAttachmentLabel(`🎥 Attached: ${file.name}`);
   });
 }
 
 attachmentPreview.classList.add("hidden");
-attachmentPreview.innerHTML = "";
+attachmentPreview.textContent = "";
 
 // ---------------- LOGOUT ----------------
 if (logoutBtn) {
